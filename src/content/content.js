@@ -1,0 +1,701 @@
+import './content.css';
+
+// Easy Translate Content Script - 精简版
+class EasyTranslateContent {
+    constructor() {
+        this.config = {
+            downloadPatterns: [
+                /\.(zip|rar|7z|tar|gz|exe|msi|deb|rpm|dmg|iso|pdf|doc|docx|xls|xlsx|ppt|pptx|mp4|avi|mkv|mp3|wav)$/i,
+                /\/download\//i,
+                /download\?/i,
+                /attachment/i,
+                /file\?/i,
+                /releases\/download\//i
+            ],
+            buttonClass: 'easy-translate-btn',
+            dialogClass: 'easy-translate-dialog'
+        };
+        
+        this.init();
+    }
+
+    init() {
+        // 简化的兼容性检查
+        if (!chrome?.runtime || !chrome?.storage) {
+            console.warn('Easy Translate: Chrome APIs not available');
+            return;
+        }
+
+        // 等待页面加载
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.start());
+        } else {
+            this.start();
+        }
+    }
+
+    start() {
+        console.log('Easy Translate: Starting...');
+        this.detectAndAddButtons();
+        this.setupObserver();
+        this.listenForMessages();
+    }
+
+    setupObserver() {
+        const observer = new MutationObserver((mutations) => {
+            let shouldCheck = false;
+            
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === Node.ELEMENT_NODE && 
+                            (node.tagName === 'A' || node.querySelector('a'))) {
+                            shouldCheck = true;
+                            break;
+                        }
+                    }
+                    if (shouldCheck) break;
+                }
+            }
+            
+            if (shouldCheck) {
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = setTimeout(() => this.detectAndAddButtons(), 300);
+            }
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    detectAndAddButtons() {
+        const links = document.querySelectorAll('a[href]');
+        let addedCount = 0;
+        
+        for (const link of links) {
+            if (this.isDownloadLink(link.href) && !this.hasTransferButton(link)) {
+                if (this.addTransferButton(link)) {
+                    addedCount++;
+                }
+            }
+        }
+        
+        if (addedCount > 0) {
+            console.log(`Easy Translate: Added ${addedCount} buttons`);
+        }
+    }
+
+    isDownloadLink(url) {
+        if (!url || url.startsWith('javascript:') || url.startsWith('mailto:')) {
+            return false;
+        }
+        return this.config.downloadPatterns.some(pattern => pattern.test(url));
+    }
+
+    hasTransferButton(link) {
+        return link.querySelector(`.${this.config.buttonClass}`) || 
+               link.previousElementSibling?.classList.contains(this.config.buttonClass);
+    }
+
+    addTransferButton(link) {
+        const button = document.createElement('button');
+        button.className = this.config.buttonClass;
+        button.setAttribute('data-url', link.href);
+        button.title = 'Easy Translate - 传输到服务器';
+        
+        // SVG图标
+        button.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7,10 12,15 17,10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+        `;
+        
+        // 简化的样式设置
+        Object.assign(button.style, {
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: '4px',
+            padding: '2px',
+            backgroundColor: '#fbbf24',
+            color: '#000',
+            border: 'none',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            minWidth: '18px',
+            minHeight: '18px'
+        });
+        
+        // 事件处理
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.showTransferDialog(link.href);
+        });
+        
+        // 悬停效果
+        button.addEventListener('mouseenter', () => {
+            button.style.backgroundColor = '#f59e0b';
+            button.style.transform = 'scale(1.1)';
+        });
+        
+        button.addEventListener('mouseleave', () => {
+            button.style.backgroundColor = '#fbbf24';
+            button.style.transform = 'scale(1)';
+        });
+        
+        // 插入按钮
+        try {
+            link.parentElement?.insertBefore(button, link);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    showTransferDialog(url) {
+        try {
+            this.removeExistingDialog();
+            const dialog = this.createTransferDialog(url);
+            if (dialog) {
+                document.body.appendChild(dialog);
+                this.loadServers(dialog);
+            }
+        } catch (error) {
+            console.error('Dialog error:', error);
+            alert(`准备传输: ${url}\n请检查插件状态`);
+        }
+    }
+
+    removeExistingDialog() {
+        document.querySelector(`.${this.config.dialogClass}`)?.remove();
+    }
+
+    createTransferDialog(url) {
+        const dialog = document.createElement('div');
+        dialog.className = this.config.dialogClass;
+        
+        Object.assign(dialog.style, {
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            right: '0',
+            bottom: '0',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: '999999',
+            padding: '20px'
+        });
+        
+        dialog.innerHTML = `
+            <div style="background: white; border-radius: 8px; padding: 24px; max-width: 400px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h3 style="margin: 0; font-size: 16px; color: #333;">Easy Translate</h3>
+                    <button class="close-btn" style="background: none; border: none; cursor: pointer; font-size: 18px; color: #666;">×</button>
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">FROM 文件:</label>
+                    <div style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9; font-size: 12px; word-break: break-all; max-height: 60px; overflow-y: auto;">${url}</div>
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">TO 服务器:</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <select class="server-select" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option disabled selected>加载中...</option>
+                        </select>
+                        <button class="edit-server-btn" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa; cursor: pointer; font-size: 12px;" disabled>编辑</button>
+                    </div>
+                    <div class="server-info" style="margin-top: 6px; padding: 6px 8px; background: #f8f9fa; border-radius: 3px; font-size: 12px; color: #666; min-height: 16px; display: none;">
+                        <span class="server-details">请选择服务器以查看详细信息</span>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">路径:</label>
+                    <input type="text" placeholder="/home/uploads/" class="target-path" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button class="cancel-btn" style="padding: 8px 16px; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer;">取消</button>
+                    <button class="add-server-btn" style="padding: 8px 16px; border: 1px solid #ddd; border-radius: 4px; background: #f0f0f0; cursor: pointer;">添加服务器</button>
+                    <button class="transfer-btn" style="padding: 8px 16px; border: none; border-radius: 4px; background: #fbbf24; color: black; cursor: pointer;">开始传输</button>
+                </div>
+            </div>
+        `;
+        
+        this.bindDialogEvents(dialog, url);
+        return dialog;
+    }
+
+    bindDialogEvents(dialog, url) {
+        // 关闭事件
+        const closeDialog = () => dialog.remove();
+        
+        dialog.querySelector('.close-btn').addEventListener('click', closeDialog);
+        dialog.querySelector('.cancel-btn').addEventListener('click', closeDialog);
+        
+        // 传输按钮
+        dialog.querySelector('.transfer-btn').addEventListener('click', () => {
+            this.startTransfer(dialog, url);
+        });
+        
+        // 添加服务器
+        dialog.querySelector('.add-server-btn').addEventListener('click', () => {
+            this.showAddServerDialog(dialog);
+        });
+        
+        // 编辑服务器
+        dialog.querySelector('.edit-server-btn').addEventListener('click', () => {
+            this.editSelectedServer(dialog);
+        });
+        
+        // 服务器选择
+        dialog.querySelector('.server-select').addEventListener('change', (e) => {
+            const targetPath = dialog.querySelector('.target-path');
+            const editBtn = dialog.querySelector('.edit-server-btn');
+            const serverInfo = dialog.querySelector('.server-info');
+            const serverDetails = dialog.querySelector('.server-details');
+            
+            if (e.target.selectedIndex > 0) { // 非默认选项
+                targetPath.value = e.target.value || '/home/uploads/';
+                editBtn.disabled = false;
+                editBtn.style.backgroundColor = '#e3f2fd';
+                editBtn.style.color = '#1976d2';
+                
+                // 显示服务器详细信息
+                const selectedOption = e.target.options[e.target.selectedIndex];
+                console.log('Selected option data:', selectedOption.dataset);
+                
+                try {
+                    const serverDataStr = selectedOption.dataset.serverData;
+                    if (serverDataStr) {
+                        const serverData = JSON.parse(decodeURIComponent(atob(serverDataStr)));
+                        console.log('Parsed server data:', serverData);
+                        
+                        if (serverData.protocol && serverData.username && serverData.port) {
+                            serverDetails.innerHTML = `
+                                <strong>协议:</strong> ${serverData.protocol.toUpperCase()} | 
+                                <strong>用户:</strong> ${serverData.username} | 
+                                <strong>端口:</strong> ${serverData.port}
+                            `;
+                            serverInfo.style.display = 'block';
+                        } else {
+                            console.warn('Incomplete server data:', serverData);
+                            serverDetails.innerHTML = '<span style="color: #999;">服务器信息不完整</span>';
+                            serverInfo.style.display = 'block';
+                        }
+                    } else {
+                        console.warn('No server data found in option');
+                        serverInfo.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error parsing server data:', error);
+                    serverDetails.innerHTML = '<span style="color: #dc2626;">解析服务器信息失败</span>';
+                    serverInfo.style.display = 'block';
+                }
+            } else {
+                editBtn.disabled = true;
+                editBtn.style.backgroundColor = '#f8f9fa';
+                editBtn.style.color = '#6c757d';
+                serverInfo.style.display = 'none';
+            }
+        });
+        
+        // 背景点击和ESC键关闭
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) closeDialog();
+        });
+        
+        const handleEsc = (e) => {
+            if (e.key === 'Escape') {
+                closeDialog();
+                document.removeEventListener('keydown', handleEsc);
+            }
+        };
+        document.addEventListener('keydown', handleEsc);
+    }
+
+    async loadServers(dialog) {
+        try {
+            const result = await chrome.storage.local.get(['servers']);
+            let servers = result.servers || [];
+            
+            // 如果没有服务器，添加一个默认的localhost服务器
+            if (servers.length === 0) {
+                const defaultServer = {
+                    id: 'default_localhost',
+                    name: 'localhost (默认)',
+                    host: 'localhost',
+                    port: 22,
+                    protocol: 'sftp',
+                    username: 'admin',
+                    password: '',
+                    defaultPath: '/home/uploads/',
+                    createdAt: new Date().toISOString(),
+                    lastUsed: new Date().toISOString(),
+                    isDefault: true
+                };
+                
+                servers = [defaultServer];
+                await chrome.storage.local.set({ servers });
+                console.log('Easy Translate: Created default localhost server');
+            }
+            
+            this.populateServerList(dialog, servers);
+        } catch (error) {
+            console.error('Failed to load servers:', error);
+            this.populateServerList(dialog, []);
+        }
+    }
+
+    populateServerList(dialog, servers) {
+        const select = dialog.querySelector('.server-select');
+        
+        if (servers.length === 0) {
+            select.innerHTML = '<option disabled selected>请先添加服务器</option>';
+            return;
+        }
+        
+        select.innerHTML = '<option value="" disabled selected>选择服务器</option>';
+        
+        servers.forEach((server, index) => {
+            const option = document.createElement('option');
+            option.value = server.defaultPath || '/home/uploads/';
+            option.setAttribute('data-server-index', index);
+            
+            // 使用Base64编码存储服务器数据，避免HTML转义问题
+            const serverDataEncoded = btoa(encodeURIComponent(JSON.stringify({
+                protocol: server.protocol || 'sftp',
+                username: server.username || '',
+                port: server.port || 22,
+                host: server.host || ''
+            })));
+            option.setAttribute('data-server-data', serverDataEncoded);
+            option.textContent = `${server.name} (${server.host})`;
+            
+            select.appendChild(option);
+        });
+    }
+
+    async editSelectedServer(dialog) {
+        const select = dialog.querySelector('.server-select');
+        const selectedOption = select.options[select.selectedIndex];
+        
+        if (!selectedOption || !selectedOption.dataset.serverIndex) {
+            this.showAlert('请先选择要编辑的服务器', 'warning');
+            return;
+        }
+        
+        try {
+            const result = await chrome.storage.local.get(['servers']);
+            const servers = result.servers || [];
+            const serverIndex = parseInt(selectedOption.dataset.serverIndex);
+            const serverData = servers[serverIndex];
+            
+            if (serverData) {
+                this.showAddServerDialog(dialog, serverData);
+            } else {
+                this.showAlert('未找到选中的服务器', 'error');
+            }
+        } catch (error) {
+            console.error('Failed to load server for editing:', error);
+            this.showAlert('加载服务器数据失败', 'error');
+        }
+    }
+
+    async startTransfer(dialog, url) {
+        const select = dialog.querySelector('.server-select');
+        const pathInput = dialog.querySelector('.target-path');
+        
+        if (!select.value) {
+            this.showAlert('请选择服务器', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'startTransfer',
+                data: {
+                    url,
+                    serverId: select.selectedIndex,
+                    targetPath: pathInput.value || '/home/uploads/'
+                }
+            });
+            
+            if (response.success) {
+                this.showAlert(response.message, 'success');
+                dialog.remove();
+            } else {
+                this.showAlert(response.error, 'error');
+            }
+        } catch (error) {
+            this.showAlert('传输失败: ' + error.message, 'error');
+        }
+    }
+
+    showAlert(message, type = 'info') {
+        const alert = document.createElement('div');
+        alert.textContent = message;
+        Object.assign(alert.style, {
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            padding: '12px 16px',
+            borderRadius: '6px',
+            color: 'white',
+            backgroundColor: type === 'success' ? '#10b981' : 
+                           type === 'error' ? '#ef4444' : 
+                           type === 'warning' ? '#f59e0b' : '#3b82f6',
+            zIndex: '1000000',
+            fontSize: '14px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+        });
+        
+        document.body.appendChild(alert);
+        setTimeout(() => alert.remove(), 3000);
+    }
+
+    listenForMessages() {
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.action === 'showTransferDialog') {
+                this.showTransferDialog(request.url);
+                sendResponse({ success: true });
+            }
+        });
+    }
+
+    showAddServerDialog(parentDialog, serverData = null) {
+        const addServerDialog = document.createElement('div');
+        addServerDialog.className = 'easy-translate-add-server-dialog';
+        
+        Object.assign(addServerDialog.style, {
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            right: '0',
+            bottom: '0',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: '1000000',
+            padding: '20px'
+        });
+
+        const isEdit = !!serverData;
+        const title = isEdit ? '编辑服务器' : '添加服务器';
+
+        addServerDialog.innerHTML = `
+            <div style="background: white; border-radius: 8px; padding: 24px; max-width: 450px; width: 90%; box-shadow: 0 4px 25px rgba(0,0,0,0.2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 18px; color: #333;">${title}</h3>
+                    <button class="close-btn" style="background: none; border: none; cursor: pointer; font-size: 20px; color: #666;">×</button>
+                </div>
+                
+                <form class="server-form">
+                    <input type="hidden" name="serverId" value="${serverData?.id || ''}">
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">服务器名称 *</label>
+                        <input type="text" name="name" value="${serverData?.name || ''}" placeholder="例: 我的服务器" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">主机地址 *</label>
+                        <input type="text" name="host" value="${serverData?.host || ''}" placeholder="例: 192.168.1.100 或 localhost" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                        <div style="flex: 1;">
+                            <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">端口</label>
+                            <input type="number" name="port" value="${serverData?.port || 22}" placeholder="22" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        <div style="flex: 1;">
+                            <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">协议</label>
+                            <select name="protocol" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                                <option value="sftp" ${(serverData?.protocol || 'sftp') === 'sftp' ? 'selected' : ''}>SFTP</option>
+                                <option value="ftp" ${serverData?.protocol === 'ftp' ? 'selected' : ''}>FTP</option>
+                                <option value="scp" ${serverData?.protocol === 'scp' ? 'selected' : ''}>SCP</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">用户名 *</label>
+                        <input type="text" name="username" value="${serverData?.username || ''}" placeholder="例: admin 或 root" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">密码 *</label>
+                        <input type="password" name="password" value="${serverData?.password || ''}" placeholder="服务器登录密码" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">默认路径</label>
+                        <input type="text" name="defaultPath" value="${serverData?.defaultPath || '/home/uploads/'}" placeholder="/home/uploads/" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px; justify-content: space-between;">
+                        <div>
+                            ${isEdit ? '<button type="button" class="delete-btn" style="padding: 10px 16px; border: 1px solid #dc2626; border-radius: 4px; background: white; color: #dc2626; cursor: pointer;">删除</button>' : ''}
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="cancel-btn" style="padding: 10px 16px; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer;">取消</button>
+                            <button type="button" class="test-btn" style="padding: 10px 16px; border: 1px solid #3b82f6; border-radius: 4px; background: white; color: #3b82f6; cursor: pointer;">测试连接</button>
+                            <button type="submit" class="save-btn" style="padding: 10px 16px; border: none; border-radius: 4px; background: #fbbf24; color: black; cursor: pointer;">${isEdit ? '更新' : '保存'}</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        document.body.appendChild(addServerDialog);
+        this.bindAddServerEvents(addServerDialog, parentDialog, isEdit);
+    }
+
+    bindAddServerEvents(addServerDialog, parentDialog, isEdit) {
+        const form = addServerDialog.querySelector('.server-form');
+        
+        // 关闭按钮
+        addServerDialog.querySelector('.close-btn').addEventListener('click', () => {
+            addServerDialog.remove();
+        });
+        
+        // 取消按钮
+        addServerDialog.querySelector('.cancel-btn').addEventListener('click', () => {
+            addServerDialog.remove();
+        });
+        
+        // 删除按钮
+        if (isEdit) {
+            addServerDialog.querySelector('.delete-btn').addEventListener('click', () => {
+                this.deleteServer(addServerDialog, parentDialog);
+            });
+        }
+        
+        // 测试连接按钮
+        addServerDialog.querySelector('.test-btn').addEventListener('click', async () => {
+            const testBtn = addServerDialog.querySelector('.test-btn');
+            const originalText = testBtn.textContent;
+            testBtn.textContent = '测试中...';
+            testBtn.disabled = true;
+            
+            try {
+                const formData = new FormData(form);
+                const response = await chrome.runtime.sendMessage({
+                    action: 'testConnection',
+                    data: Object.fromEntries(formData)
+                });
+                
+                if (response.success) {
+                    this.showAlert('连接测试成功！', 'success');
+                } else {
+                    this.showAlert('连接失败: ' + response.error, 'error');
+                }
+            } catch (error) {
+                this.showAlert('测试失败: ' + error.message, 'error');
+            } finally {
+                testBtn.textContent = originalText;
+                testBtn.disabled = false;
+            }
+        });
+        
+        // 保存按钮
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveServer(addServerDialog, parentDialog, isEdit);
+        });
+        
+        // ESC键关闭
+        const handleEsc = (e) => {
+            if (e.key === 'Escape') {
+                addServerDialog.remove();
+                document.removeEventListener('keydown', handleEsc);
+            }
+        };
+        document.addEventListener('keydown', handleEsc);
+    }
+
+    async saveServer(addServerDialog, parentDialog, isEdit) {
+        const form = addServerDialog.querySelector('.server-form');
+        const formData = new FormData(form);
+        
+        const serverData = {
+            id: formData.get('serverId') || `server_${Date.now()}`,
+            name: formData.get('name'),
+            host: formData.get('host'),
+            port: parseInt(formData.get('port')) || 22,
+            protocol: formData.get('protocol'),
+            username: formData.get('username'),
+            password: formData.get('password'),
+            defaultPath: formData.get('defaultPath') || '/home/uploads/',
+            createdAt: new Date().toISOString(),
+            lastUsed: new Date().toISOString()
+        };
+        
+        try {
+            const result = await chrome.storage.local.get(['servers']);
+            let servers = result.servers || [];
+            
+            if (isEdit) {
+                const index = servers.findIndex(s => s.id === serverData.id);
+                if (index !== -1) {
+                    servers[index] = { ...servers[index], ...serverData };
+                }
+            } else {
+                servers.push(serverData);
+            }
+            
+            await chrome.storage.local.set({ servers });
+            
+            addServerDialog.remove();
+            
+            if (parentDialog) {
+                this.populateServerList(parentDialog, servers);
+            }
+            
+            this.showAlert(isEdit ? '服务器更新成功' : '服务器添加成功', 'success');
+            
+        } catch (error) {
+            console.error('Failed to save server:', error);
+            this.showAlert('保存失败: ' + error.message, 'error');
+        }
+    }
+
+    async deleteServer(addServerDialog, parentDialog) {
+        const form = addServerDialog.querySelector('.server-form');
+        const serverId = form.querySelector('input[name="serverId"]').value;
+        const serverName = form.querySelector('input[name="name"]').value;
+        
+        if (!confirm(`确定要删除服务器 "${serverName}" 吗？`)) {
+            return;
+        }
+        
+        try {
+            const result = await chrome.storage.local.get(['servers']);
+            let servers = result.servers || [];
+            
+            servers = servers.filter(s => s.id !== serverId);
+            await chrome.storage.local.set({ servers });
+            
+            addServerDialog.remove();
+            
+            if (parentDialog) {
+                this.populateServerList(parentDialog, servers);
+            }
+            
+            this.showAlert('服务器删除成功', 'success');
+        } catch (error) {
+            console.error('Failed to delete server:', error);
+            this.showAlert('删除失败: ' + error.message, 'error');
+        }
+    }
+}
+
+// 初始化
+new EasyTranslateContent();

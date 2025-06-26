@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy Translate 插件测试页面</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 { 
+            color: #333; 
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h2 { 
+            color: #2c3e50; 
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+            margin-top: 30px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+        .download-link {
+            display: inline-block;
+            background: #3498db;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 4px;
+            transition: background 0.2s;
+        }
+        .download-link:hover {
+            background: #2980b9;
+        }
+        .status {
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 6px;
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .debug-info {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .debug-item {
+            margin: 8px 0;
+            padding: 4px 8px;
+            border-radius: 3px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌟 Easy Translate 插件测试页面</h1>
+        
+        <div class="status">
+            ✅ 插件测试环境已准备就绪
+        </div>
+
+        <h2>📥 测试下载链接</h2>
+        <div class="section">
+            <p><strong>以下链接应该会显示传输按钮：</strong></p>
+            
+            <h3>压缩文件</h3>
+            <a href="https://github.com/microsoft/vscode/archive/refs/heads/main.zip" class="download-link">VSCode源码.zip</a>
+            <a href="https://nodejs.org/dist/v18.17.0/node-v18.17.0.tar.gz" class="download-link">Node.js.tar.gz</a>
+            
+            <h3>可执行文件</h3>
+            <a href="https://github.com/git-for-windows/git/releases/download/v2.41.0.windows.1/Git-2.41.0-64-bit.exe" class="download-link">Git.exe</a>
+            <a href="https://github.com/microsoft/PowerToys/releases/download/v0.71.0/PowerToysSetup-0.71.0-x64.exe" class="download-link">PowerToys.exe</a>
+            
+            <h3>文档和媒体</h3>
+            <a href="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" class="download-link">测试.pdf</a>
+            <a href="https://www.soundjay.com/misc/sounds/bell-ringing-05.wav" class="download-link">音频.wav</a>
+        </div>
+
+        <h2>🔍 调试信息</h2>
+        <div id="debug-container" class="debug-info">
+            正在加载调试信息...
+        </div>
+    </div>
+
+    <script>
+        // 简化的调试信息
+        function updateDebugInfo() {
+            const debugContainer = document.getElementById('debug-container');
+            const hasChrome = typeof chrome !== 'undefined';
+            const hasStorage = hasChrome && typeof chrome.storage !== 'undefined';
+            const hasRuntime = hasChrome && typeof chrome.runtime !== 'undefined';
+            const buttonCount = document.querySelectorAll('.easy-translate-btn').length;
+            const linkCount = document.querySelectorAll('a[href]').length;
+            
+            debugContainer.innerHTML = `
+                <div class="debug-item info"><strong>浏览器:</strong> ${navigator.userAgent.includes('Edg') ? 'Edge' : 'Chrome'}</div>
+                <div class="debug-item ${hasChrome ? 'success' : 'error'}"><strong>扩展API:</strong> ${hasChrome ? '✅ 可用' : '❌ 不可用'}</div>
+                <div class="debug-item ${hasStorage ? 'success' : 'error'}"><strong>Storage API:</strong> ${hasStorage ? '✅ 可用' : '❌ 不可用'}</div>
+                <div class="debug-item ${hasRuntime ? 'success' : 'error'}"><strong>Runtime API:</strong> ${hasRuntime ? '✅ 可用' : '❌ 不可用'}</div>
+                <div class="debug-item info"><strong>下载链接:</strong> ${linkCount} 个</div>
+                <div class="debug-item ${buttonCount > 0 ? 'success' : 'warning'}"><strong>传输按钮:</strong> ${buttonCount} 个 ${buttonCount > 0 ? '✅' : '⚠️'}</div>
+            `;
+        }
+
+        // 页面加载后显示调试信息
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(updateDebugInfo, 1000);
+            setInterval(updateDebugInfo, 5000);
+        });
+
+        console.log('Easy Translate 测试页面已加载');
+    </script>
+</body>
+</html> 

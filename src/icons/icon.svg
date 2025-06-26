@@ -1,0 +1,17 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="64" cy="64" r="60" fill="#3B82F6" stroke="#1E40AF" stroke-width="2"/>
+  
+  <!-- Transfer Arrow -->
+  <path d="M40 64H88M88 64L76 52M88 64L76 76" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Server Icon -->
+  <rect x="92" y="56" width="20" height="16" rx="2" fill="white"/>
+  <rect x="94" y="58" width="16" height="2" fill="#3B82F6"/>
+  <rect x="94" y="62" width="16" height="2" fill="#3B82F6"/>
+  <rect x="94" y="66" width="16" height="2" fill="#3B82F6"/>
+  
+  <!-- Download Icon -->
+  <rect x="16" y="56" width="16" height="16" rx="2" fill="white"/>
+  <path d="M20 60L24 64L28 60M24 64V52" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg> 
