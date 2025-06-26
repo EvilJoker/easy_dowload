@@ -9,7 +9,8 @@ module.exports = (env, argv) => {
   return {
     entry: {
       background: './src/background/background.js',
-      content: './src/content/content.js'
+      content: './src/content/content.js',
+      popup: './src/popup/popup.js'
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -38,6 +39,11 @@ module.exports = (env, argv) => {
     plugins: [
       new MiniCssExtractPlugin({
         filename: '[name].css'
+      }),
+      new HtmlWebpackPlugin({
+        template: './src/popup/popup.html',
+        filename: 'popup/popup.html',
+        chunks: ['popup']
       }),
       new CopyPlugin({
         patterns: [
