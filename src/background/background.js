@@ -24,6 +24,72 @@ chrome.runtime.onInstalled.addListener((details) => {
     });
 });
 
+// 监听标签页切换，更新badge状态
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+        await updateBadgeForTab(activeInfo.tabId);
+    } catch (error) {
+        console.error('Failed to update badge on tab activation:', error);
+    }
+});
+
+// 监听标签页URL更新，更新badge状态
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && tab.url) {
+        try {
+            await updateBadgeForTab(tabId);
+        } catch (error) {
+            console.error('Failed to update badge on tab update:', error);
+        }
+    }
+});
+
+// 更新指定标签页的badge状态
+async function updateBadgeForTab(tabId) {
+    try {
+        // 获取标签页信息
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+            // 清除chrome内部页面的badge
+            await chrome.action.setBadgeText({ text: "", tabId });
+            return;
+        }
+
+        // 获取页面设置
+        const pageKey = getPageKeyFromUrl(tab.url);
+        const result = await chrome.storage.local.get([`pageSettings_${pageKey}`]);
+        const pageSettings = result[`pageSettings_${pageKey}`];
+        const isEnabled = pageSettings?.domModificationEnabled || false;
+
+        // 更新badge
+        if (isEnabled) {
+            await chrome.action.setBadgeText({ text: "ON", tabId });
+            await chrome.action.setBadgeBackgroundColor({ color: "#059669", tabId });
+        } else {
+            await chrome.action.setBadgeText({ text: "OFF", tabId });
+            await chrome.action.setBadgeBackgroundColor({ color: "#6b7280", tabId });
+        }
+    } catch (error) {
+        console.error('Error updating badge for tab:', tabId, error);
+        // 发生错误时清除badge
+        try {
+            await chrome.action.setBadgeText({ text: "", tabId });
+        } catch (e) {
+            // 忽略清除badge时的错误
+        }
+    }
+}
+
+// 从URL生成页面key
+function getPageKeyFromUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        return urlObj.hostname;
+    } catch {
+        return 'unknown_page';
+    }
+}
+
 // 监听来自其他脚本的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Background received message:', request);

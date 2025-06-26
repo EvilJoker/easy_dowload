@@ -10,7 +10,8 @@ module.exports = (env, argv) => {
     entry: {
       background: './src/background/background.js',
       content: './src/content/content.js',
-      popup: './src/popup/popup.js'
+      popup: './src/popup/popup.js',
+      'content-styles': './src/content/content.css'
     },
     output: {
       path: path.resolve(__dirname, 'dist'),

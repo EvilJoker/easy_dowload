@@ -1,6 +1,4 @@
-import './content.css';
-
-// Easy Translate Content Script - 精简版
+// Easy Translate Content Script - 页面级控制版本
 class EasyTranslateContent {
     constructor() {
         this.config = {
@@ -16,33 +14,161 @@ class EasyTranslateContent {
             dialogClass: 'easy-translate-dialog'
         };
         
+        this.isActive = false; // 插件是否处于活动状态
+        this.observer = null;
+        this.debounceTimer = null;
+        this.injectedStyleElement = null; // 跟踪注入的CSS元素
+        this.pageKey = this.getPageKey(); // 当前页面的唯一标识
+        
+        // 设置消息监听并检查初始状态
         this.init();
     }
 
-    init() {
-        // 简化的兼容性检查
-        if (!chrome?.runtime || !chrome?.storage) {
-            console.warn('Easy Translate: Chrome APIs not available');
-            return;
-        }
-
-        // 等待页面加载
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => this.start());
-        } else {
-            this.start();
+    async init() {
+        console.log(`Easy Translate: Initializing for page: ${this.pageKey}`);
+        
+        // 设置消息监听
+        this.setupMessageListener();
+        
+        // 检查当前页面的初始设置状态
+        try {
+            if (chrome?.storage) {
+                const result = await chrome.storage.local.get([`pageSettings_${this.pageKey}`]);
+                const pageSettings = result[`pageSettings_${this.pageKey}`];
+                const isEnabled = pageSettings?.domModificationEnabled || false;
+                
+                if (isEnabled) {
+                    console.log(`Easy Translate: Page ${this.pageKey} initial state is enabled, activating...`);
+                    await this.activate();
+                } else {
+                    console.log(`Easy Translate: Page ${this.pageKey} initial state is disabled, staying inactive`);
+                }
+                
+                // 更新初始badge状态
+                await this.updateBadge(isEnabled);
+            }
+        } catch (error) {
+            console.log(`Easy Translate: Could not load initial settings for page ${this.pageKey}, staying inactive`);
+            // 确保badge为空
+            await this.updateBadge(false);
         }
     }
 
-    start() {
-        console.log('Easy Translate: Starting...');
+    // 生成页面唯一key（基于域名）
+    getPageKey() {
+        try {
+            const urlObj = new URL(window.location.href);
+            return urlObj.hostname;
+        } catch {
+            return 'unknown_page';
+        }
+    }
+
+    setupMessageListener() {
+        // 只设置消息监听，不进行任何DOM操作
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.type === 'DOM_MODIFICATION_TOGGLE') {
+                // 检查是否是页面级控制消息
+                if (request.pageLevel) {
+                    console.log(`Easy Translate: Page-level toggle received for ${this.pageKey}:`, request.enabled);
+                    this.handleToggle(request.enabled);
+                    sendResponse({ success: true, pageKey: this.pageKey });
+                }
+            } else if (request.action === 'showTransferDialog' && this.isActive) {
+                // 只有在激活状态下才响应对话框请求
+                this.showTransferDialog(request.url);
+                sendResponse({ success: true, pageKey: this.pageKey });
+            }
+        });
+    }
+
+    async handleToggle(enabled) {
+        if (enabled && !this.isActive) {
+            // 从关闭切换到开启：初始化所有功能
+            console.log(`Easy Translate: Activating for page ${this.pageKey}...`);
+            await this.activate();
+            // 更新badge
+            await this.updateBadge(true);
+        } else if (!enabled && this.isActive) {
+            // 从开启切换到关闭：清理所有DOM修改
+            console.log(`Easy Translate: Deactivating for page ${this.pageKey}...`);
+            this.deactivate();
+            // 更新badge
+            await this.updateBadge(false);
+        }
+    }
+
+    async activate() {
+        try {
+            // 检查Chrome APIs可用性
+            if (!chrome?.runtime || !chrome?.storage) {
+                console.warn(`Easy Translate: Chrome APIs not available for page ${this.pageKey}`);
+                return;
+            }
+
+            this.isActive = true;
+
+            // 首先注入CSS
+            await this.injectCSS();
+
+            // 等待页面完全加载后再开始DOM操作
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => this.startDomOperations());
+            } else {
+                this.startDomOperations();
+            }
+        } catch (error) {
+            console.error(`Easy Translate: Activation failed for page ${this.pageKey}:`, error);
+            this.isActive = false;
+        }
+    }
+
+    startDomOperations() {
+        if (!this.isActive) return; // 双重检查，确保仍然处于激活状态
+        
+        console.log(`Easy Translate: Starting DOM operations for page ${this.pageKey}...`);
         this.detectAndAddButtons();
         this.setupObserver();
-        this.listenForMessages();
+    }
+
+    deactivate() {
+        console.log(`Easy Translate: Cleaning up DOM modifications for page ${this.pageKey}...`);
+        
+        this.isActive = false;
+        
+        // 清理所有DOM修改
+        this.removeAllButtons();
+        this.removeAnyDialogs();
+        
+        // 移除注入的CSS
+        this.removeCSS();
+        
+        // 停止observer
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+        
+        // 清理定时器
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+            this.debounceTimer = null;
+        }
+        
+        console.log(`Easy Translate: Deactivated completely for page ${this.pageKey}`);
     }
 
     setupObserver() {
-        const observer = new MutationObserver((mutations) => {
+        if (!this.isActive) return;
+
+        // 清理现有observer
+        if (this.observer) {
+            this.observer.disconnect();
+        }
+
+        this.observer = new MutationObserver((mutations) => {
+            if (!this.isActive) return; // 确保仍然处于激活状态
+            
             let shouldCheck = false;
             
             for (const mutation of mutations) {
@@ -60,18 +186,26 @@ class EasyTranslateContent {
             
             if (shouldCheck) {
                 clearTimeout(this.debounceTimer);
-                this.debounceTimer = setTimeout(() => this.detectAndAddButtons(), 300);
+                this.debounceTimer = setTimeout(() => {
+                    if (this.isActive) { // 再次检查状态
+                        this.detectAndAddButtons();
+                    }
+                }, 300);
             }
         });
         
-        observer.observe(document.body, { childList: true, subtree: true });
+        this.observer.observe(document.body, { childList: true, subtree: true });
     }
 
     detectAndAddButtons() {
+        if (!this.isActive) return; // 安全检查
+
         const links = document.querySelectorAll('a[href]');
         let addedCount = 0;
         
         for (const link of links) {
+            if (!this.isActive) break; // 如果在处理过程中被停用，立即停止
+            
             if (this.isDownloadLink(link.href) && !this.hasTransferButton(link)) {
                 if (this.addTransferButton(link)) {
                     addedCount++;
@@ -80,7 +214,26 @@ class EasyTranslateContent {
         }
         
         if (addedCount > 0) {
-            console.log(`Easy Translate: Added ${addedCount} buttons`);
+            console.log(`Easy Translate: Added ${addedCount} buttons for page ${this.pageKey}`);
+        }
+    }
+
+    removeAllButtons() {
+        const buttons = document.querySelectorAll(`.${this.config.buttonClass}`);
+        buttons.forEach(button => button.remove());
+        
+        if (buttons.length > 0) {
+            console.log(`Easy Translate: Removed ${buttons.length} buttons from page ${this.pageKey}`);
+        }
+    }
+
+    removeAnyDialogs() {
+        // 移除任何可能打开的对话框
+        const dialogs = document.querySelectorAll(`.${this.config.dialogClass}, .easy-translate-add-server-dialog`);
+        dialogs.forEach(dialog => dialog.remove());
+        
+        if (dialogs.length > 0) {
+            console.log(`Easy Translate: Removed ${dialogs.length} dialogs from page ${this.pageKey}`);
         }
     }
 
@@ -460,15 +613,6 @@ class EasyTranslateContent {
         setTimeout(() => alert.remove(), 3000);
     }
 
-    listenForMessages() {
-        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-            if (request.action === 'showTransferDialog') {
-                this.showTransferDialog(request.url);
-                sendResponse({ success: true });
-            }
-        });
-    }
-
     showAddServerDialog(parentDialog, serverData = null) {
         const addServerDialog = document.createElement('div');
         addServerDialog.className = 'easy-translate-add-server-dialog';
@@ -693,6 +837,65 @@ class EasyTranslateContent {
         } catch (error) {
             console.error('Failed to delete server:', error);
             this.showAlert('删除失败: ' + error.message, 'error');
+        }
+    }
+
+    async injectCSS() {
+        // 如果CSS已经注入，则不重复注入
+        if (this.injectedStyleElement) {
+            return;
+        }
+
+        try {
+            // 获取CSS内容 - 使用webpack生成的CSS文件
+            const cssUrl = chrome.runtime.getURL('content-styles.css');
+            const response = await fetch(cssUrl);
+            const cssText = await response.text();
+            
+            // 创建style元素并注入CSS
+            this.injectedStyleElement = document.createElement('style');
+            this.injectedStyleElement.setAttribute('data-easy-translate', 'injected');
+            this.injectedStyleElement.textContent = cssText;
+            
+            // 注入到页面头部
+            (document.head || document.documentElement).appendChild(this.injectedStyleElement);
+            
+            console.log(`Easy Translate: CSS injected dynamically for page ${this.pageKey}`);
+        } catch (error) {
+            console.error(`Easy Translate: Failed to inject CSS for page ${this.pageKey}:`, error);
+        }
+    }
+
+    removeCSS() {
+        if (this.injectedStyleElement) {
+            this.injectedStyleElement.remove();
+            this.injectedStyleElement = null;
+            console.log(`Easy Translate: CSS removed from page ${this.pageKey}`);
+        }
+    }
+
+    // 更新插件图标的badge
+    async updateBadge(isEnabled) {
+        try {
+            if (isEnabled) {
+                // 显示绿色的"ON"标签
+                await chrome.action.setBadgeText({
+                    text: "ON"
+                });
+                await chrome.action.setBadgeBackgroundColor({
+                    color: "#059669" // 绿色
+                });
+            } else {
+                // 清除badge
+                await chrome.action.setBadgeText({
+                    text: "OFF"
+                });
+                await chrome.action.setBadgeBackgroundColor({
+                    color: "#6b7280" // 灰色
+                });
+            }
+        } catch (error) {
+            console.error('Failed to update badge:', error);
         }
     }
 }
