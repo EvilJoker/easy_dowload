@@ -1,7 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /* 确保按钮不受网站样式影响 */
 .easy-translate-btn {
     all: initial;

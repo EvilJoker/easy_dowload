@@ -21,6 +21,9 @@ class EasyTranslateContent {
         this.debounceTimer = null;
         this.injectedStyleElement = null; // 跟踪注入的CSS元素
         this.pageKey = this.getPageKey(); // 当前页面的唯一标识
+        this.transferButtons = new WeakMap();
+        this.isInitialized = false;
+        this.monitoredTasks = new Map(); // 添加任务监控映射
         
         // 设置消息监听并检查初始状态
         this.init();
@@ -163,6 +166,34 @@ class EasyTranslateContent {
                 }
                 
                 sendResponse({success: true, patternsCount: this.customPatterns.length});
+            } else if (request.action === 'showAddServerDialog') {
+                console.log(`Easy Translate: Show add server dialog for page ${this.pageKey}`);
+                
+                // 调用网页版的添加服务器对话框
+                this.showAddServerDialog();
+                
+                sendResponse({success: true});
+            } else if (request.action === 'showEditServerDialog') {
+                console.log(`Easy Translate: Show edit server dialog for page ${this.pageKey}`, request.serverId);
+                
+                // 调用网页版的编辑服务器对话框
+                await this.showEditServerDialog(request.serverId);
+                
+                sendResponse({success: true});
+            } else if (request.action === 'showTransferDialog') {
+                console.log(`Easy Translate: Show transfer dialog for page ${this.pageKey}`, request.url);
+                
+                // 显示传输对话框
+                this.showTransferDialog(request.url);
+                
+                sendResponse({success: true});
+            } else if (request.action === 'taskUpdate') {
+                console.log(`Easy Translate: Task update received for page ${this.pageKey}:`, request.taskId, request.task.status);
+                
+                // 处理任务状态更新
+                this.handleTaskStatusChange(request.taskId, request.task);
+                
+                sendResponse({success: true});
             } else if (request.action === 'requestCurrentStatus') {
                 console.log(`Easy Translate: Status request for page ${this.pageKey}, active: ${this.isActive}`);
                 sendResponse({active: this.isActive});
@@ -195,10 +226,10 @@ class EasyTranslateContent {
     async activate() {
         try {
             // 检查Chrome APIs可用性
-            if (!chrome?.runtime || !chrome?.storage) {
+        if (!chrome?.runtime || !chrome?.storage) {
                 console.warn(`Easy Translate: Chrome APIs not available for page ${this.pageKey}`);
-                return;
-            }
+            return;
+        }
 
             this.isActive = true;
 
@@ -206,9 +237,9 @@ class EasyTranslateContent {
             await this.injectCSS();
 
             // 等待页面完全加载后再开始DOM操作
-            if (document.readyState === 'loading') {
+        if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', () => this.startDomOperations());
-            } else {
+        } else {
                 this.startDomOperations();
             }
         } catch (error) {
@@ -502,13 +533,15 @@ class EasyTranslateContent {
             const serverDetails = dialog.querySelector('.server-details');
             
             if (e.target.selectedIndex > 0) { // 非默认选项
-                targetPath.value = e.target.value || '/home/uploads/';
+                const selectedOption = e.target.options[e.target.selectedIndex];
+                const defaultPath = selectedOption.getAttribute('data-default-path') || '/home/uploads/';
+                
+                targetPath.value = defaultPath;  // 修复：从data-default-path获取路径
                 editBtn.disabled = false;
                 editBtn.style.backgroundColor = '#e3f2fd';
                 editBtn.style.color = '#1976d2';
                 
                 // 显示服务器详细信息
-                const selectedOption = e.target.options[e.target.selectedIndex];
                 console.log('Selected option data:', selectedOption.dataset);
                 
                 try {
@@ -605,8 +638,9 @@ class EasyTranslateContent {
         
         servers.forEach((server, index) => {
             const option = document.createElement('option');
-            option.value = server.defaultPath || '/home/uploads/';
+            option.value = server.id;  // 修复：使用服务器ID作为value
             option.setAttribute('data-server-index', index);
+            option.setAttribute('data-default-path', server.defaultPath || '/home/uploads/');  // 将路径存储在data属性中
             
             // 使用Base64编码存储服务器数据，避免HTML转义问题
             const serverDataEncoded = btoa(encodeURIComponent(JSON.stringify({
@@ -658,24 +692,140 @@ class EasyTranslateContent {
         }
         
         try {
+            // 提取文件名
+            const fileName = this.extractFileName(url);
+            
+            // 使用新的下载管理API - 修复服务器ID传递错误
             const response = await chrome.runtime.sendMessage({
-                action: 'startTransfer',
+                action: 'startDownload',
                 data: {
-                    url,
-                    serverId: select.selectedIndex,
+                    url: url,
+                    fileName: fileName,
+                    serverId: select.value,  // 修复：使用服务器ID而不是索引
                     targetPath: pathInput.value || '/home/uploads/'
                 }
             });
             
             if (response.success) {
-                this.showAlert(response.message, 'success');
+                this.showDetailedAlert(`下载任务已启动: ${fileName}`, 'success', '任务开始');
                 dialog.remove();
+                
+                // 开始监听这个任务的状态变化
+                this.startTaskStatusMonitoring(response.taskId, fileName);
+                
+                // 显示提示信息，用户可以在浏览器下载页面查看进度
+                setTimeout(() => {
+                    this.showAlert('可在浏览器下载页面查看下载进度，完成后将自动开始上传', 'info');
+                }, 1500);
             } else {
-                this.showAlert(response.error, 'error');
+                this.showDetailedAlert('启动下载失败: ' + response.error, 'error', '下载失败');
             }
         } catch (error) {
-            this.showAlert('传输失败: ' + error.message, 'error');
+            this.showDetailedAlert('启动下载失败: ' + error.message, 'error', '下载失败');
         }
+    }
+
+    // 辅助方法：从URL提取文件名
+    extractFileName(url) {
+        try {
+            const urlObj = new URL(url);
+            
+            // 首先检查查询参数中的文件名
+            const urlParams = urlObj.searchParams;
+            
+            // 常见的文件名参数
+            const fileNameParams = ['filename', 'file', 'name', 'download', 'attachment'];
+            for (const param of fileNameParams) {
+                const fileName = urlParams.get(param);
+                if (fileName && this.isValidFileName(fileName)) {
+                    return fileName;
+                }
+            }
+            
+            // 从URL路径提取文件名
+            const pathname = urlObj.pathname;
+            const pathSegments = pathname.split('/').filter(Boolean);
+            
+            // 从路径段中查找看起来像文件名的部分
+            for (let i = pathSegments.length - 1; i >= 0; i--) {
+                const segment = pathSegments[i];
+                if (this.isValidFileName(segment)) {
+                    return segment;
+                }
+            }
+            
+            // 检查整个路径的最后一部分
+            const lastSegment = pathSegments[pathSegments.length - 1];
+            if (lastSegment) {
+                // 如果最后一段包含文件扩展名的迹象，使用它
+                if (lastSegment.includes('.') || lastSegment.length > 3) {
+                    return lastSegment;
+                }
+            }
+            
+            // 特殊处理：GitHub releases等
+            if (urlObj.hostname.includes('github.com') && pathname.includes('/releases/download/')) {
+                const releaseSegments = pathname.split('/releases/download/');
+                if (releaseSegments.length > 1) {
+                    const downloadPath = releaseSegments[1];
+                    const fileName = downloadPath.split('/').pop();
+                    if (fileName && this.isValidFileName(fileName)) {
+                        return fileName;
+                    }
+                }
+            }
+            
+            // 从Content-Disposition头部获取文件名（这里只能模拟）
+            // 实际场景中，这需要从HTTP响应头获取
+            
+            // 最后的备选方案：基于URL生成一个合理的文件名
+            return this.generateFallbackFileName(urlObj);
+            
+        } catch (error) {
+            console.warn('Error extracting filename from URL:', url, error);
+            return 'download_file';
+        }
+    }
+
+    // 检查是否是有效的文件名
+    isValidFileName(fileName) {
+        if (!fileName || fileName.length < 1) return false;
+        
+        // 包含文件扩展名
+        if (fileName.includes('.') && fileName.split('.').length > 1) {
+            const extension = fileName.split('.').pop().toLowerCase();
+            // 检查是否是常见的文件扩展名
+            const commonExtensions = [
+                'zip', 'rar', '7z', 'tar', 'gz', 'exe', 'msi', 'deb', 'rpm', 'dmg', 'iso',
+                'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'json', 'xml',
+                'mp4', 'avi', 'mkv', 'mp3', 'wav', 'flac', 'jpg', 'png', 'gif', 'svg',
+                'apk', 'ipa', 'pkg', 'bin', 'img', 'dll', 'so', 'dylib'
+            ];
+            return commonExtensions.includes(extension);
+        }
+        
+        // 不包含扩展名但看起来像文件名（避免目录名）
+        return fileName.length > 2 && !fileName.includes(' ') && /[a-zA-Z0-9]/.test(fileName);
+    }
+
+    // 生成备选文件名
+    generateFallbackFileName(urlObj) {
+        const hostname = urlObj.hostname.replace(/[^a-zA-Z0-9]/g, '_');
+        const timestamp = Date.now();
+        
+        // 尝试从路径推断文件类型
+        const pathname = urlObj.pathname.toLowerCase();
+        let extension = '';
+        
+        if (pathname.includes('download') || pathname.includes('file')) {
+            if (pathname.includes('.zip') || urlObj.search.includes('zip')) extension = '.zip';
+            else if (pathname.includes('.pdf') || urlObj.search.includes('pdf')) extension = '.pdf';
+            else if (pathname.includes('.exe') || urlObj.search.includes('exe')) extension = '.exe';
+            else if (pathname.includes('.apk') || urlObj.search.includes('apk')) extension = '.apk';
+            else extension = '.bin'; // 通用二进制文件扩展名
+        }
+        
+        return `${hostname}_${timestamp}${extension}`;
     }
 
     showAlert(message, type = 'info') {
@@ -693,11 +843,21 @@ class EasyTranslateContent {
                            type === 'warning' ? '#f59e0b' : '#3b82f6',
             zIndex: '1000000',
             fontSize: '14px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            maxWidth: '400px',
+            wordWrap: 'break-word',
+            lineHeight: '1.4'
         });
         
         document.body.appendChild(alert);
-        setTimeout(() => alert.remove(), 3000);
+        
+        // 根据消息类型设置不同的自动关闭时间
+        const autoCloseTime = type === 'error' ? 8000 : type === 'warning' ? 6000 : 4000;
+        setTimeout(() => {
+            if (alert.parentNode) {
+                alert.remove();
+            }
+        }, autoCloseTime);
     }
 
     showAddServerDialog(parentDialog, serverData = null) {
@@ -818,18 +978,43 @@ class EasyTranslateContent {
             
             try {
                 const formData = new FormData(form);
+                const serverConfig = {
+                    name: formData.get('name'),
+                    host: formData.get('host'),
+                    port: parseInt(formData.get('port')) || 22,
+                    protocol: formData.get('protocol'),
+                    username: formData.get('username'),
+                    password: formData.get('password'),
+                    defaultPath: formData.get('defaultPath') || '/home/uploads/'
+                };
+                
                 const response = await chrome.runtime.sendMessage({
                     action: 'testConnection',
-                    data: Object.fromEntries(formData)
+                    data: serverConfig
                 });
                 
                 if (response.success) {
-                    this.showAlert('连接测试成功！', 'success');
+                    let message = response.message;
+                    if (response.details) {
+                        const details = response.details;
+                        message += `\n协议: ${details.protocol}`;
+                        message += `\n主机: ${details.host}:${details.port}`;
+                        if (details.username) {
+                            message += `\n用户: ${details.username}`;
+                        }
+                        if (details.responseTime) {
+                            message += `\n响应时间: ${details.responseTime}`;
+                        }
+                        if (details.connectionTime) {
+                            message += `\n连接时间: ${details.connectionTime}`;
+                        }
+                    }
+                    this.showDetailedAlert(message, 'success', '连接测试成功');
                 } else {
-                    this.showAlert('连接失败: ' + response.error, 'error');
+                    this.showDetailedAlert(response.error || '连接失败', 'error', '连接测试失败');
                 }
             } catch (error) {
-                this.showAlert('测试失败: ' + error.message, 'error');
+                this.showDetailedAlert(error.message || '测试过程中发生错误', 'error', '测试失败');
             } finally {
                 testBtn.textContent = originalText;
                 testBtn.disabled = false;
@@ -857,37 +1042,32 @@ class EasyTranslateContent {
         const formData = new FormData(form);
         
         const serverData = {
-            id: formData.get('serverId') || `server_${Date.now()}`,
+            id: formData.get('serverId') || undefined,
             name: formData.get('name'),
             host: formData.get('host'),
             port: parseInt(formData.get('port')) || 22,
             protocol: formData.get('protocol'),
             username: formData.get('username'),
             password: formData.get('password'),
-            defaultPath: formData.get('defaultPath') || '/home/uploads/',
-            createdAt: new Date().toISOString(),
-            lastUsed: new Date().toISOString()
+            defaultPath: formData.get('defaultPath') || '/home/uploads/'
         };
         
         try {
-            const result = await chrome.storage.local.get(['servers']);
-            let servers = result.servers || [];
+            // 通过background script保存服务器，确保持久化
+            const response = await chrome.runtime.sendMessage({
+                action: 'saveServer',
+                data: serverData
+            });
             
-            if (isEdit) {
-                const index = servers.findIndex(s => s.id === serverData.id);
-                if (index !== -1) {
-                    servers[index] = { ...servers[index], ...serverData };
-                }
-            } else {
-                servers.push(serverData);
+            if (!response.success) {
+                throw new Error(response.error || '保存失败');
             }
-            
-            await chrome.storage.local.set({ servers });
             
             addServerDialog.remove();
             
             if (parentDialog) {
-                this.populateServerList(parentDialog, servers);
+                // 重新加载服务器列表
+                await this.loadServers(parentDialog);
             }
             
             this.showAlert(isEdit ? '服务器更新成功' : '服务器添加成功', 'success');
@@ -1063,6 +1243,217 @@ class EasyTranslateContent {
         }
         
         return addedCount;
+    }
+
+    async showEditServerDialog(serverId) {
+        try {
+            // 从存储中获取服务器数据
+            const result = await chrome.storage.local.get(['servers']);
+            const servers = result.servers || [];
+            const serverData = servers.find(s => s.id === serverId);
+            
+            if (!serverData) {
+                this.showAlert('未找到指定的服务器', 'error');
+                return;
+            }
+            
+            // 显示编辑服务器对话框
+            this.showAddServerDialog(null, serverData);
+        } catch (error) {
+            console.error('Failed to load server for editing:', error);
+            this.showAlert('加载服务器数据失败: ' + error.message, 'error');
+        }
+    }
+
+    showDetailedAlert(message, type = 'info', title = 'Easy Translate') {
+        // 改为使用右上角消息提示
+        const formattedMessage = title ? `${title}: ${message}` : message;
+        this.showAlert(formattedMessage, type);
+        
+        // 同时在控制台输出详细日志
+        const logLevel = type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'info';
+        console[logLevel](`Easy Translate - ${title}:`, message);
+    }
+
+    // 开始监控任务状态
+    startTaskStatusMonitoring(taskId, fileName) {
+        console.log(`[MONITOR] 开始监控任务状态: ${taskId} - ${fileName}`);
+        console.log(`[MONITOR] 监控开始时间: ${new Date().toLocaleString()}`);
+        
+        // 保存任务信息
+        this.monitoredTasks.set(taskId, {
+            fileName: fileName,
+            lastStatus: 'pending',
+            startTime: Date.now(),
+            statusHistory: ['pending']
+        });
+        
+        // 设置定期检查任务状态
+        const checkInterval = setInterval(async () => {
+            try {
+                console.log(`[MONITOR] ${taskId}: 检查任务状态...`);
+                const response = await chrome.runtime.sendMessage({ action: 'getActiveTasks' });
+                
+                if (response.success) {
+                    const task = response.tasks.find(t => t.id === taskId);
+                    if (task) {
+                        console.log(`[MONITOR] ${taskId}: 在活动任务中找到，状态: ${task.status}`);
+                        this.handleTaskStatusChange(taskId, task);
+                    } else {
+                        console.log(`[MONITOR] ${taskId}: 未在活动任务中找到，检查历史记录...`);
+                        // 任务可能已完成，检查历史记录
+                        const historyResponse = await chrome.runtime.sendMessage({ action: 'getTaskHistory' });
+                        if (historyResponse.success) {
+                            const historyTask = historyResponse.history.find(t => t.id === taskId);
+                            if (historyTask) {
+                                console.log(`[MONITOR] ${taskId}: 在历史记录中找到，状态: ${historyTask.status}`);
+                                this.handleTaskStatusChange(taskId, historyTask);
+                                // 任务已完成，停止监控
+                                console.log(`[MONITOR] ${taskId}: 任务已完成，停止监控`);
+                                clearInterval(checkInterval);
+                                this.monitoredTasks.delete(taskId);
+                            } else {
+                                console.warn(`[MONITOR] ${taskId}: 在历史记录中也未找到任务`);
+                            }
+                        } else {
+                            console.error(`[MONITOR] ${taskId}: 获取历史记录失败:`, historyResponse.error);
+                        }
+                    }
+                } else {
+                    console.error(`[MONITOR] ${taskId}: 获取活动任务失败:`, response.error);
+                }
+            } catch (error) {
+                console.error(`[MONITOR] ${taskId}: 检查任务状态失败:`, error);
+            }
+        }, 2000); // 每2秒检查一次
+        
+        // 10分钟后自动停止监控（防止内存泄漏）
+        setTimeout(() => {
+            console.log(`[MONITOR] ${taskId}: 监控超时，自动停止 (10分钟)`);
+            clearInterval(checkInterval);
+            this.monitoredTasks.delete(taskId);
+        }, 600000);
+    }
+
+    // 处理任务状态变化
+    handleTaskStatusChange(taskId, task) {
+        const monitoredTask = this.monitoredTasks.get(taskId);
+        if (!monitoredTask) {
+            console.warn(`[STATUS] ${taskId}: 任务未在监控列表中`);
+            return;
+        }
+        
+        const { fileName, lastStatus, statusHistory } = monitoredTask;
+        const newStatus = task.status;
+        
+        // 记录状态变化日志
+        console.log(`[STATUS] ${taskId}: 当前状态检查 - 上次: ${lastStatus}, 当前: ${newStatus}`);
+        
+        // 只在状态真正变化时显示通知
+        if (lastStatus === newStatus) {
+            console.log(`[STATUS] ${taskId}: 状态未变化，跳过通知`);
+            return;
+        }
+        
+        // 记录状态变化历史
+        statusHistory.push(newStatus);
+        console.log(`[STATUS] ${taskId}: 状态变化历史:`, statusHistory);
+        
+        // 计算状态持续时间
+        const now = Date.now();
+        const elapsedTime = now - monitoredTask.startTime;
+        const elapsedMinutes = Math.floor(elapsedTime / 60000);
+        const elapsedSeconds = Math.floor((elapsedTime % 60000) / 1000);
+        
+        console.log(`[STATUS] ${taskId}: 状态变化 ${lastStatus} -> ${newStatus}`);
+        console.log(`[STATUS] ${taskId}: 任务运行时间: ${elapsedMinutes}分${elapsedSeconds}秒`);
+        
+        // 记录任务详细信息
+        if (task.totalBytes) {
+            console.log(`[STATUS] ${taskId}: 文件大小: ${(task.totalBytes / 1024 / 1024).toFixed(2)} MB`);
+        }
+        if (task.transferredBytes !== undefined) {
+            const progress = task.totalBytes ? ((task.transferredBytes / task.totalBytes) * 100).toFixed(1) : '未知';
+            console.log(`[STATUS] ${taskId}: 传输进度: ${progress}% (${(task.transferredBytes / 1024 / 1024).toFixed(2)} MB)`);
+        }
+        if (task.serverId) {
+            console.log(`[STATUS] ${taskId}: 目标服务器: ${task.serverId}`);
+        }
+        if (task.targetPath) {
+            console.log(`[STATUS] ${taskId}: 目标路径: ${task.targetPath}`);
+        }
+        
+        // 更新最后状态
+        monitoredTask.lastStatus = newStatus;
+        
+        // 根据状态变化显示相应提示
+        switch (newStatus) {
+            case 'downloading':
+                if (lastStatus === 'pending') {
+                    console.log(`[NOTIFY] ${taskId}: 显示下载开始通知`);
+                    this.showAlert(`开始下载: ${fileName}`, 'info');
+                }
+                break;
+                
+            case 'download_complete':
+                console.log(`[NOTIFY] ${taskId}: 下载完成，检查是否需要上传`);
+                if (task.serverId) {
+                    console.log(`[NOTIFY] ${taskId}: 有服务器配置，显示上传准备通知`);
+                    this.showAlert(
+                        `下载完成: ${fileName} - 正在准备上传到服务器...`, 
+                        'success'
+                    );
+                } else {
+                    console.log(`[NOTIFY] ${taskId}: 无服务器配置，任务完成`);
+                    this.showAlert(
+                        `下载完成: ${fileName} - 未配置服务器，任务已完成`, 
+                        'success'
+                    );
+                }
+                break;
+                
+            case 'transferring':
+                console.log(`[NOTIFY] ${taskId}: 显示上传开始通知`);
+                this.showAlert(
+                    `开始上传: ${fileName} - 正在上传到服务器，请耐心等待...`, 
+                    'info'
+                );
+                break;
+                
+            case 'complete':
+                console.log(`[NOTIFY] ${taskId}: 显示任务完成通知`);
+                this.showAlert(
+                    `上传完成: ${fileName} - 文件已成功上传到服务器！`, 
+                    'success'
+                );
+                break;
+                
+            case 'failed':
+                const isUploadFailed = task.downloadCompleteTime;
+                const failureType = isUploadFailed ? '上传' : '下载';
+                const errorMsg = task.error || '未知错误';
+                
+                console.error(`[NOTIFY] ${taskId}: ${failureType}失败:`, errorMsg);
+                console.error(`[NOTIFY] ${taskId}: 任务详情:`, task);
+                
+                this.showAlert(
+                    `${failureType}失败: ${fileName} - ${errorMsg}`, 
+                    'error'
+                );
+                break;
+                
+            case 'cancelled':
+                console.log(`[NOTIFY] ${taskId}: 显示任务取消通知`);
+                this.showAlert(
+                    `任务取消: ${fileName}`, 
+                    'warning'
+                );
+                break;
+                
+            default:
+                console.log(`[NOTIFY] ${taskId}: 未知状态: ${newStatus}`);
+                break;
+        }
     }
 }
 
