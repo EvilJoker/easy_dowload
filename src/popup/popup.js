@@ -1,16 +1,23 @@
-// popup.js - Easy Translate插件的popup页面脚本 - 页面级控制版本
+// popup.js - Easy Translate插件的popup页面脚本 - 简化版本
 
 class PopupController {
     constructor() {
         this.toggle = null;
         this.statusIndicator = null;
-        this.statusText = null;
         this.currentTab = null;
+        this.currentPatterns = [];
+        this.defaultPatterns = [
+            '.zip', '.rar', '.7z', '.tar', '.gz', '.exe', '.msi', 
+            '.deb', '.rpm', '.dmg', '.iso', '.pdf', '.doc', '.docx', 
+            '.xls', '.xlsx', '.ppt', '.pptx', '.mp4', '.avi', '.mkv', 
+            '.mp3', '.wav', '/download/', 'download?', 'attachment', 
+            'file?', 'releases/download/'
+        ];
         this.init();
     }
 
     async init() {
-        console.log('Easy Translate popup loaded - page-level control');
+        console.log('Easy Translate popup loaded - simplified version');
         
         // 获取当前标签页信息
         await this.getCurrentTab();
@@ -18,9 +25,8 @@ class PopupController {
         // 获取DOM元素
         this.toggle = document.getElementById('domModificationToggle');
         this.statusIndicator = document.getElementById('statusIndicator');
-        this.statusText = document.getElementById('statusText');
         
-        if (!this.toggle || !this.statusIndicator || !this.statusText) {
+        if (!this.toggle || !this.statusIndicator) {
             console.error('Failed to find required DOM elements');
             return;
         }
@@ -30,6 +36,9 @@ class PopupController {
 
         // 加载当前页面的设置
         await this.loadPageSettings();
+        
+        // 加载并显示当前后缀列表
+        await this.loadAndDisplaySuffixes();
         
         // 绑定事件
         this.bindEvents();
@@ -47,15 +56,10 @@ class PopupController {
 
     displayPageInfo() {
         if (this.currentTab) {
-            // 创建页面信息显示区域
             const pageInfoContainer = document.querySelector('.page-info');
             if (pageInfoContainer) {
                 const domain = new URL(this.currentTab.url).hostname;
-                pageInfoContainer.innerHTML = `
-                    <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
-                        <strong>当前页面:</strong> ${domain}
-                    </div>
-                `;
+                pageInfoContainer.innerHTML = `当前页面: ${domain}`;
             }
         }
     }
@@ -69,7 +73,6 @@ class PopupController {
         }
 
         try {
-            // 使用页面URL作为key来存储页面级设置
             const pageKey = this.getPageKey(this.currentTab.url);
             const result = await chrome.storage.local.get([`pageSettings_${pageKey}`]);
             const pageSettings = result[`pageSettings_${pageKey}`];
@@ -79,16 +82,43 @@ class PopupController {
             this.toggle.checked = isEnabled;
             this.updateStatus(isEnabled);
             
-            // 更新插件图标的badge显示
             await this.updateBadge(isEnabled);
             
             console.log(`Page settings loaded for ${pageKey}:`, { domModificationEnabled: isEnabled });
         } catch (error) {
             console.error('Failed to load page settings:', error);
-            // 默认状态
             this.toggle.checked = false;
             this.updateStatus(false);
             await this.updateBadge(false);
+        }
+    }
+
+    async loadAndDisplaySuffixes() {
+        try {
+            const result = await chrome.storage.local.get(['customDownloadPatterns']);
+            this.currentPatterns = result.customDownloadPatterns || [...this.defaultPatterns];
+            this.displaySuffixes();
+        } catch (error) {
+            console.error('Failed to load patterns:', error);
+            this.currentPatterns = [...this.defaultPatterns];
+            this.displaySuffixes();
+        }
+    }
+
+    displaySuffixes() {
+        const suffixDisplay = document.getElementById('suffixDisplay');
+        if (suffixDisplay) {
+            const displayPatterns = this.currentPatterns.slice(0, 10); // 只显示前10个
+            const tags = displayPatterns.map(pattern => 
+                `<span class="suffix-tag">${pattern}</span>`
+            ).join(' ');
+            
+            const moreInfo = this.currentPatterns.length > 10 ? 
+                ` <span class="suffix-tag">+${this.currentPatterns.length - 10}更多</span>` : '';
+            
+            suffixDisplay.innerHTML = tags + moreInfo;
+            
+            console.log(`Displayed ${displayPatterns.length} patterns out of ${this.currentPatterns.length} total`);
         }
     }
 
@@ -102,6 +132,183 @@ class PopupController {
             // 通知content script更新状态
             await this.notifyContentScript(isEnabled);
         });
+
+        // 编辑按钮事件
+        document.getElementById('editSuffixBtn').addEventListener('click', () => {
+            this.showEditModal();
+        });
+
+        // 模态框事件
+        this.bindModalEvents();
+    }
+
+    bindModalEvents() {
+        const modal = document.getElementById('editModal');
+        const closeBtn = document.getElementById('closeModalBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const restoreBtn = document.getElementById('restoreBtn');
+        const addBtn = document.getElementById('addSuffixBtn');
+        const input = document.getElementById('suffixInput');
+
+        // 关闭模态框
+        const closeModal = () => {
+            modal.style.display = 'none';
+        };
+
+        closeBtn.addEventListener('click', closeModal);
+        cancelBtn.addEventListener('click', closeModal);
+
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        // ESC关闭
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.style.display !== 'none') {
+                closeModal();
+            }
+        });
+
+        // 添加后缀
+        const addSuffix = () => {
+            const value = input.value.trim();
+            if (value && !this.currentPatterns.includes(value)) {
+                this.currentPatterns.push(value);
+                this.updateModalList();
+                input.value = '';
+            }
+        };
+
+        addBtn.addEventListener('click', addSuffix);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addSuffix();
+            }
+        });
+
+        // 保存
+        saveBtn.addEventListener('click', async () => {
+            const saveBtn = document.getElementById('saveBtn');
+            const originalText = saveBtn.textContent;
+            
+            // 显示保存中状态
+            saveBtn.textContent = '保存中...';
+            saveBtn.disabled = true;
+            
+            try {
+                await this.savePatterns();
+                
+                // 延迟关闭模态框，让用户看到保存成功的反馈
+                setTimeout(() => {
+                    closeModal();
+                    saveBtn.disabled = false;
+                }, 1000);
+                
+            } catch (error) {
+                console.error('Save failed:', error);
+                saveBtn.textContent = originalText;
+                saveBtn.disabled = false;
+            }
+        });
+
+        // 还原默认
+        restoreBtn.addEventListener('click', () => {
+            if (confirm('确定要还原到默认设置吗？这将删除所有自定义后缀。')) {
+                this.currentPatterns = [...this.defaultPatterns];
+                this.updateModalList();
+            }
+        });
+    }
+
+    showEditModal() {
+        const modal = document.getElementById('editModal');
+        modal.style.display = 'flex';
+        this.updateModalList();
+    }
+
+    updateModalList() {
+        const listContainer = document.getElementById('suffixList');
+        listContainer.innerHTML = '';
+
+        this.currentPatterns.forEach((pattern, index) => {
+            const item = document.createElement('div');
+            item.className = 'suffix-item';
+            item.innerHTML = `
+                <span>${pattern}</span>
+                <button class="remove-suffix-btn" data-index="${index}">删除</button>
+            `;
+            listContainer.appendChild(item);
+        });
+
+        // 绑定删除事件
+        listContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-suffix-btn')) {
+                const index = parseInt(e.target.dataset.index);
+                this.currentPatterns.splice(index, 1);
+                this.updateModalList();
+            }
+        });
+    }
+
+    async savePatterns() {
+        try {
+            await chrome.storage.local.set({
+                customDownloadPatterns: this.currentPatterns
+            });
+
+            // 通知content script更新模式
+            if (this.currentTab) {
+                try {
+                    const response = await chrome.tabs.sendMessage(this.currentTab.id, {
+                        action: 'updateCustomPatterns'
+                    });
+                    console.log('Patterns update response:', response);
+                } catch (error) {
+                    console.log('Content script not ready, patterns saved locally:', error.message);
+                }
+            }
+
+            console.log('Patterns saved successfully:', this.currentPatterns);
+            
+            // 立即更新显示
+            this.displaySuffixes();
+            
+            // 显示保存成功提示
+            this.showSaveSuccess();
+            
+        } catch (error) {
+            console.error('Failed to save patterns:', error);
+            this.showSaveError();
+        }
+    }
+
+    // 显示保存成功提示
+    showSaveSuccess() {
+        const saveBtn = document.getElementById('saveBtn');
+        const originalText = saveBtn.textContent;
+        saveBtn.textContent = '已保存';
+        saveBtn.style.background = '#10b981';
+        
+        setTimeout(() => {
+            saveBtn.textContent = originalText;
+            saveBtn.style.background = '#3b82f6';
+        }, 1500);
+    }
+
+    // 显示保存错误提示
+    showSaveError() {
+        const saveBtn = document.getElementById('saveBtn');
+        const originalText = saveBtn.textContent;
+        saveBtn.textContent = '保存失败';
+        saveBtn.style.background = '#ef4444';
+        
+        setTimeout(() => {
+            saveBtn.textContent = originalText;
+            saveBtn.style.background = '#3b82f6';
+        }, 1500);
     }
 
     async savePageSettings(isEnabled) {
@@ -122,7 +329,6 @@ class PopupController {
                 [settingsKey]: pageSettings 
             });
             
-            // 更新插件图标的badge显示
             await this.updateBadge(isEnabled);
             
             console.log(`Page settings saved for ${pageKey}:`, pageSettings);
@@ -134,10 +340,8 @@ class PopupController {
     updateStatus(isEnabled) {
         if (isEnabled) {
             this.statusIndicator.classList.add('active');
-            this.statusText.textContent = '此页面功能已启用';
         } else {
             this.statusIndicator.classList.remove('active');
-            this.statusText.textContent = '此页面功能已禁用';
         }
     }
 
@@ -145,13 +349,10 @@ class PopupController {
         if (!this.currentTab) return;
 
         try {
-            // 发送消息给当前标签页的content script
             chrome.tabs.sendMessage(this.currentTab.id, {
-                type: 'DOM_MODIFICATION_TOGGLE',
-                enabled: isEnabled,
-                pageLevel: true // 标识这是页面级控制
+                action: 'toggleDomModification',
+                enabled: isEnabled
             }).catch(error => {
-                // 忽略连接错误，可能是页面还没有content script
                 console.log('Content script not ready:', error.message);
             });
         } catch (error) {
@@ -159,7 +360,6 @@ class PopupController {
         }
     }
 
-    // 生成页面唯一key（基于域名）
     getPageKey(url) {
         try {
             const urlObj = new URL(url);
@@ -169,27 +369,24 @@ class PopupController {
         }
     }
 
-    // 更新插件图标的badge
     async updateBadge(isEnabled) {
         try {
             if (isEnabled) {
-                // 显示绿色的"ON"标签
                 await chrome.action.setBadgeText({
                     text: "ON",
                     tabId: this.currentTab.id
                 });
                 await chrome.action.setBadgeBackgroundColor({
-                    color: "#059669", // 绿色
+                    color: "#10b981",
                     tabId: this.currentTab.id
                 });
             } else {
-                // 显示灰色的"OFF"标签
                 await chrome.action.setBadgeText({
                     text: "OFF",
                     tabId: this.currentTab.id
                 });
                 await chrome.action.setBadgeBackgroundColor({
-                    color: "#6b7280", // 灰色
+                    color: "#6b7280",
                     tabId: this.currentTab.id
                 });
             }

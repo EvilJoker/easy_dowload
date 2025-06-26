@@ -9,7 +9,7 @@
             width: 300px;
             min-height: 200px;
             margin: 0;
-            padding: 20px;
+            padding: 16px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #ffffff;
             color: #333333;
@@ -18,60 +18,73 @@
         .container {
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 12px;
         }
         
         .header {
             text-align: center;
+            margin-bottom: 8px;
         }
         
         h1 {
-            font-size: 18px;
-            margin: 0 0 10px 0;
+            font-size: 16px;
+            margin: 0 0 4px 0;
             color: #2563eb;
         }
         
         .subtitle {
-            font-size: 12px;
+            font-size: 11px;
             color: #666666;
             margin: 0;
         }
         
-        .control-section {
+        .page-info {
+            font-size: 10px;
+            color: #666;
+            text-align: center;
+            margin: 4px 0;
+        }
+        
+        /* 开关控制行 */
+        .switch-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
             border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 16px;
+            border-radius: 6px;
             background-color: #f9fafb;
         }
         
-        .control-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-        
-        .control-item:last-child {
-            margin-bottom: 0;
-        }
-        
-        .control-label {
+        .switch-label {
             font-size: 14px;
             color: #374151;
             font-weight: 500;
         }
         
-        .control-description {
-            font-size: 12px;
-            color: #6b7280;
-            margin-top: 4px;
+        .switch-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #9ca3af;
+            transition: background-color 0.2s;
+        }
+        
+        .status-indicator.active {
+            background-color: #10b981;
         }
         
         .switch {
             position: relative;
             display: inline-block;
-            width: 44px;
-            height: 24px;
+            width: 36px;
+            height: 20px;
         }
         
         .switch input {
@@ -89,14 +102,14 @@
             bottom: 0;
             background-color: #ccc;
             transition: .2s;
-            border-radius: 24px;
+            border-radius: 20px;
         }
         
         .slider:before {
             position: absolute;
             content: "";
-            height: 18px;
-            width: 18px;
+            height: 14px;
+            width: 14px;
             left: 3px;
             bottom: 3px;
             background-color: white;
@@ -109,54 +122,279 @@
         }
         
         input:checked + .slider:before {
-            transform: translateX(20px);
+            transform: translateX(16px);
         }
-        
-        .status {
+
+        /* 文件后缀编辑区域 */
+        .suffix-section {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 12px;
+            background-color: #f9fafb;
+        }
+
+        .suffix-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .suffix-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .edit-btn {
+            padding: 4px 8px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .edit-btn:hover {
+            background: #2563eb;
+        }
+
+        .suffix-display {
+            font-size: 11px;
+            color: #6b7280;
+            line-height: 1.4;
+            max-height: 40px;
+            overflow-y: auto;
+        }
+
+        .suffix-tag {
+            display: inline-block;
+            background: #e5e7eb;
+            color: #374151;
+            padding: 2px 4px;
+            border-radius: 2px;
+            margin: 1px;
+            font-size: 10px;
+        }
+
+        /* 编辑模态框 */
+        .edit-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .edit-modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            width: 400px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .suffix-edit-area {
+            margin-bottom: 16px;
+        }
+
+        .suffix-input-group {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .suffix-input {
+            flex: 1;
+            padding: 6px 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
             font-size: 12px;
-            color: #6b7280;
-            margin-top: 12px;
         }
-        
-        .status-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #9ca3af;
+
+        .add-suffix-btn {
+            padding: 6px 10px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
         }
-        
-        .status-indicator.active {
-            background-color: #059669;
+
+        .suffix-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            padding: 8px;
+        }
+
+        .suffix-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 6px;
+            margin-bottom: 2px;
+            background: #f3f4f6;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .remove-suffix-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 2px;
+            padding: 2px 4px;
+            font-size: 9px;
+            cursor: pointer;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .restore-btn {
+            padding: 8px 12px;
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .save-cancel-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .cancel-btn, .save-btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .cancel-btn {
+            background: #6b7280;
+            color: white;
+        }
+
+        .save-btn {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .examples {
+            margin-top: 8px;
+            padding: 6px;
+            background: #f8fafc;
+            border-radius: 3px;
+            font-size: 10px;
+            color: #64748b;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Easy Translate</h1>
-            <p class="subtitle">文件传输助手 - 页面级控制</p>
-            <!-- 页面信息显示区域 -->
+        <h1>Easy Translate</h1>
+            <p class="subtitle">文件传输助手</p>
             <div class="page-info"></div>
         </div>
         
-        <div class="control-section">
-            <div class="control-item">
-                <div>
-                    <div class="control-label">DOM 修改功能</div>
-                    <div class="control-description">在页面中添加传输按钮</div>
-                </div>
+        <!-- 开关控制行 -->
+        <div class="switch-row">
+            <span class="switch-label">启用增强</span>
+            <div class="switch-controls">
+                <div class="status-indicator" id="statusIndicator"></div>
                 <label class="switch">
                     <input type="checkbox" id="domModificationToggle">
                     <span class="slider"></span>
                 </label>
             </div>
-            
-            <div class="status">
-                <div class="status-indicator" id="statusIndicator"></div>
-                <span id="statusText">功能已禁用</span>
+        </div>
+
+        <!-- 文件后缀编辑区域 -->
+        <div class="suffix-section">
+            <div class="suffix-header">
+                <span class="suffix-title">文件后缀</span>
+                <button class="edit-btn" id="editSuffixBtn">编辑</button>
+            </div>
+            <div class="suffix-display" id="suffixDisplay">
+                <!-- 动态显示当前后缀列表 -->
+            </div>
+        </div>
+
+        <div id="pageInfo" class="page-info">
+            <!-- 页面信息会动态填充 -->
+        </div>
+    </div>
+    
+    <!-- 编辑模态框 -->
+    <div class="edit-modal" id="editModal" style="display: none;">
+        <div class="edit-modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">编辑文件后缀</h3>
+                <button class="close-btn" id="closeModalBtn">×</button>
+            </div>
+
+            <div class="suffix-edit-area">
+                <div class="suffix-input-group">
+                    <input type="text" class="suffix-input" id="suffixInput" placeholder="输入后缀 (如: .zip 或 /download/)" />
+                    <button class="add-suffix-btn" id="addSuffixBtn">添加</button>
+                </div>
+
+                <div class="suffix-list" id="suffixList">
+                    <!-- 动态生成的后缀列表 -->
+                </div>
+
+                <div class="examples">
+                    <strong>示例：</strong> .zip, .rar, /download/, github.com/releases, /\.apk$/i
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="restore-btn" id="restoreBtn">还原默认</button>
+                <div class="save-cancel-group">
+                    <button class="cancel-btn" id="cancelBtn">取消</button>
+                    <button class="save-btn" id="saveBtn">保存</button>
+                </div>
             </div>
         </div>
     </div>

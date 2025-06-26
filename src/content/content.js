@@ -2,7 +2,8 @@
 class EasyTranslateContent {
     constructor() {
         this.config = {
-            downloadPatterns: [
+            // 默认内置的下载模式
+            defaultDownloadPatterns: [
                 /\.(zip|rar|7z|tar|gz|exe|msi|deb|rpm|dmg|iso|pdf|doc|docx|xls|xlsx|ppt|pptx|mp4|avi|mkv|mp3|wav)$/i,
                 /\/download\//i,
                 /download\?/i,
@@ -14,6 +15,7 @@ class EasyTranslateContent {
             dialogClass: 'easy-translate-dialog'
         };
         
+        this.customPatterns = []; // 用户自定义的匹配模式
         this.isActive = false; // 插件是否处于活动状态
         this.observer = null;
         this.debounceTimer = null;
@@ -30,6 +32,9 @@ class EasyTranslateContent {
         // 设置消息监听
         this.setupMessageListener();
         
+        // 加载自定义匹配模式
+        await this.loadCustomPatterns();
+        
         // 检查当前页面的初始设置状态
         try {
             if (chrome?.storage) {
@@ -44,14 +49,76 @@ class EasyTranslateContent {
                     console.log(`Easy Translate: Page ${this.pageKey} initial state is disabled, staying inactive`);
                 }
                 
-                // 更新初始badge状态
-                await this.updateBadge(isEnabled);
+                // 更新初始badge状态（不阻塞初始化）
+                this.updateBadge(isEnabled).catch(error => {
+                    console.log(`Easy Translate: Badge update failed during init for page ${this.pageKey}:`, error.message);
+                });
             }
         } catch (error) {
-            console.log(`Easy Translate: Could not load initial settings for page ${this.pageKey}, staying inactive`);
-            // 确保badge为空
-            await this.updateBadge(false);
+            console.log(`Easy Translate: Could not load initial settings for page ${this.pageKey}, staying inactive:`, error.message);
+            // 确保badge更新不会因为错误而阻塞
+            this.updateBadge(false).catch(badgeError => {
+                console.log(`Easy Translate: Badge update failed during error handling for page ${this.pageKey}:`, badgeError.message);
+            });
         }
+    }
+
+    // 加载自定义匹配模式
+    async loadCustomPatterns() {
+        try {
+            const result = await chrome.storage.local.get(['customDownloadPatterns']);
+            const patterns = result.customDownloadPatterns || [];
+            
+            this.customPatterns = patterns.map(pattern => {
+                try {
+                    // 如果是正则表达式字符串，转换为RegExp对象
+                    if (typeof pattern === 'string') {
+                        // 检查是否是正则表达式格式 /pattern/flags
+                        const regexMatch = pattern.match(/^\/(.+)\/([gimuy]*)$/);
+                        if (regexMatch) {
+                            return new RegExp(regexMatch[1], regexMatch[2]);
+                        } else {
+                            // 普通字符串，创建简单的包含匹配
+                            return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                        }
+                    }
+                    return pattern;
+                } catch (error) {
+                    console.warn('Invalid custom pattern:', pattern, error);
+                    return null;
+                }
+            }).filter(Boolean);
+            
+            console.log(`Easy Translate: Loaded ${this.customPatterns.length} custom patterns for page ${this.pageKey}`);
+        } catch (error) {
+            console.error('Failed to load custom patterns:', error);
+            this.customPatterns = [];
+        }
+    }
+
+    // 检查是否是下载链接（优先使用自定义模式，如果没有自定义模式则使用内置模式）
+    isDownloadLink(url) {
+        if (!url || url.startsWith('javascript:') || url.startsWith('mailto:')) {
+            return false;
+        }
+        
+        // 如果有自定义模式，则只使用自定义模式（完全替换默认模式）
+        if (this.customPatterns.length > 0) {
+            for (const pattern of this.customPatterns) {
+                try {
+                    if (pattern.test(url)) {
+                        return true;
+                    }
+                } catch (error) {
+                    console.warn('Error testing custom pattern:', pattern, error);
+                }
+            }
+            // 如果有自定义模式但都不匹配，则返回false（不检查默认模式）
+            return false;
+        }
+        
+        // 只有在没有自定义模式时才使用默认模式
+        return this.config.defaultDownloadPatterns.some(pattern => pattern.test(url));
     }
 
     // 生成页面唯一key（基于域名）
@@ -65,20 +132,43 @@ class EasyTranslateContent {
     }
 
     setupMessageListener() {
-        // 只设置消息监听，不进行任何DOM操作
-        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-            if (request.type === 'DOM_MODIFICATION_TOGGLE') {
-                // 检查是否是页面级控制消息
-                if (request.pageLevel) {
-                    console.log(`Easy Translate: Page-level toggle received for ${this.pageKey}:`, request.enabled);
-                    this.handleToggle(request.enabled);
-                    sendResponse({ success: true, pageKey: this.pageKey });
+        chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+            console.log(`Easy Translate: Received message for page ${this.pageKey}:`, request);
+            
+            if (request.action === 'toggleDomModification') {
+                console.log(`Easy Translate: Toggle DOM modification for page ${this.pageKey}:`, request.enabled);
+                
+                if (request.enabled) {
+                    await this.activate();
+                } else {
+                    await this.deactivate();
                 }
-            } else if (request.action === 'showTransferDialog' && this.isActive) {
-                // 只有在激活状态下才响应对话框请求
-                this.showTransferDialog(request.url);
-                sendResponse({ success: true, pageKey: this.pageKey });
+                
+                // 更新badge状态（不阻塞响应）
+                this.updateBadge(request.enabled).catch(error => {
+                    console.log(`Easy Translate: Badge update failed during toggle for page ${this.pageKey}:`, error.message);
+                });
+                
+                sendResponse({success: true, active: this.isActive});
+            } else if (request.action === 'updateCustomPatterns') {
+                console.log(`Easy Translate: Updating custom patterns for page ${this.pageKey}`);
+                
+                // 重新加载自定义匹配模式
+                await this.loadCustomPatterns();
+                
+                // 如果当前是活动状态，重新评估所有按钮
+                if (this.isActive) {
+                    console.log(`Easy Translate: Re-evaluating all buttons with new patterns`);
+                    this.reEvaluateAllButtons();
+                }
+                
+                sendResponse({success: true, patternsCount: this.customPatterns.length});
+            } else if (request.action === 'requestCurrentStatus') {
+                console.log(`Easy Translate: Status request for page ${this.pageKey}, active: ${this.isActive}`);
+                sendResponse({active: this.isActive});
             }
+            
+            return true; // Keep message channel open for async response
         });
     }
 
@@ -87,14 +177,18 @@ class EasyTranslateContent {
             // 从关闭切换到开启：初始化所有功能
             console.log(`Easy Translate: Activating for page ${this.pageKey}...`);
             await this.activate();
-            // 更新badge
-            await this.updateBadge(true);
+            // 更新badge（不阻塞）
+            this.updateBadge(true).catch(error => {
+                console.log(`Easy Translate: Badge update failed during activation for page ${this.pageKey}:`, error.message);
+            });
         } else if (!enabled && this.isActive) {
             // 从开启切换到关闭：清理所有DOM修改
             console.log(`Easy Translate: Deactivating for page ${this.pageKey}...`);
             this.deactivate();
-            // 更新badge
-            await this.updateBadge(false);
+            // 更新badge（不阻塞）
+            this.updateBadge(false).catch(error => {
+                console.log(`Easy Translate: Badge update failed during deactivation for page ${this.pageKey}:`, error.message);
+            });
         }
     }
 
@@ -235,13 +329,6 @@ class EasyTranslateContent {
         if (dialogs.length > 0) {
             console.log(`Easy Translate: Removed ${dialogs.length} dialogs from page ${this.pageKey}`);
         }
-    }
-
-    isDownloadLink(url) {
-        if (!url || url.startsWith('javascript:') || url.startsWith('mailto:')) {
-            return false;
-        }
-        return this.config.downloadPatterns.some(pattern => pattern.test(url));
     }
 
     hasTransferButton(link) {
@@ -877,26 +964,105 @@ class EasyTranslateContent {
     // 更新插件图标的badge
     async updateBadge(isEnabled) {
         try {
+            // 检查Chrome action API是否可用
+            if (!chrome?.action || !chrome?.action.setBadgeText || !chrome?.action.setBadgeBackgroundColor) {
+                console.warn(`Easy Translate: Chrome action API not available for page ${this.pageKey}`);
+                return;
+            }
+
+            // 获取当前tab ID（如果可用）
+            let tabId = undefined;
+            try {
+                if (chrome?.tabs) {
+                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                    tabId = tab?.id;
+                }
+            } catch (error) {
+                console.log(`Easy Translate: Could not get tab ID for badge update: ${error.message}`);
+            }
+
             if (isEnabled) {
                 // 显示绿色的"ON"标签
                 await chrome.action.setBadgeText({
-                    text: "ON"
+                    text: "ON",
+                    ...(tabId && { tabId })
                 });
                 await chrome.action.setBadgeBackgroundColor({
-                    color: "#059669" // 绿色
+                    color: "#059669", // 绿色
+                    ...(tabId && { tabId })
                 });
             } else {
-                // 清除badge
+                // 显示灰色的"OFF"标签
                 await chrome.action.setBadgeText({
-                    text: "OFF"
+                    text: "OFF",
+                    ...(tabId && { tabId })
                 });
                 await chrome.action.setBadgeBackgroundColor({
-                    color: "#6b7280" // 灰色
+                    color: "#6b7280", // 灰色
+                    ...(tabId && { tabId })
                 });
             }
+            
+            console.log(`Easy Translate: Badge updated for page ${this.pageKey}: ${isEnabled ? 'ON' : 'OFF'}`);
         } catch (error) {
-            console.error('Failed to update badge:', error);
+            console.error(`Easy Translate: Failed to update badge for page ${this.pageKey}:`, error);
+            // 不再抛出错误，只记录日志
         }
+    }
+
+    // 移除所有传输按钮的方法
+    removeAllTransferButtons() {
+        const existingButtons = document.querySelectorAll(`.${this.config.buttonClass}`);
+        existingButtons.forEach(btn => btn.remove());
+        console.log(`Easy Translate: Removed ${existingButtons.length} existing transfer buttons`);
+    }
+
+    // 重新评估所有按钮 - 智能地移除不匹配的，添加新匹配的
+    reEvaluateAllButtons() {
+        console.log(`Easy Translate: Starting intelligent re-evaluation of all buttons`);
+        
+        // 获取所有现有的传输按钮
+        const existingButtons = document.querySelectorAll(`.${this.config.buttonClass}`);
+        let removedCount = 0;
+        let keptCount = 0;
+        
+        // 检查每个现有按钮是否仍然匹配新的模式
+        existingButtons.forEach(button => {
+            const url = button.getAttribute('data-url');
+            if (url && !this.isDownloadLink(url)) {
+                // 如果URL不再匹配任何模式，移除按钮
+                button.remove();
+                removedCount++;
+                console.log(`Easy Translate: Removed button for URL that no longer matches: ${url}`);
+            } else {
+                keptCount++;
+            }
+        });
+        
+        // 重新检测页面上的链接，添加新匹配的按钮
+        const addedCount = this.detectAndAddNewButtons();
+        
+        console.log(`Easy Translate: Re-evaluation complete. Removed: ${removedCount}, Kept: ${keptCount}, Added: ${addedCount}`);
+    }
+
+    // 仅添加新匹配的按钮（不重复添加已存在的）
+    detectAndAddNewButtons() {
+        if (!this.isActive) return 0; // 安全检查
+
+        const links = document.querySelectorAll('a[href]');
+        let addedCount = 0;
+        
+        for (const link of links) {
+            if (!this.isActive) break; // 如果在处理过程中被停用，立即停止
+            
+            if (this.isDownloadLink(link.href) && !this.hasTransferButton(link)) {
+                if (this.addTransferButton(link)) {
+                    addedCount++;
+                }
+            }
+        }
+        
+        return addedCount;
     }
 }
 
