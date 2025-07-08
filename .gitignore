@@ -133,4 +133,12 @@ logs/
 
 # Temporary files
 temp/
-tmp/ 
+tmp/
+
+# Easy Translate 运行时生成的文件
+error_log.json
+tasks.json
+history.json
+servers.json
+error_handler.log
+*.json.backup 

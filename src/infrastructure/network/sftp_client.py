@@ -1,7 +1,7 @@
 import paramiko
 import os
 from typing import Callable, Optional
-from .models import ServerConfig
+from ...domain.models import ServerConfig
 
 class SFTPClient:
     """SFTP文件传输客户端接口"""
