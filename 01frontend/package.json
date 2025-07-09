@@ -1,7 +1,7 @@
 {
-  "name": "easy-translate",
+  "name": "easy-translate-frontend",
   "version": "1.0.0",
-  "description": "快速下载文件到目标服务器的 Edge 浏览器插件",
+  "description": "Easy Translate Frontend - 浏览器扩展前端",
   "scripts": {
     "dev": "webpack --mode development --watch",
     "build": "webpack --mode production",
@@ -24,7 +24,8 @@
     "edge",
     "chrome",
     "file-transfer",
-    "download"
+    "download",
+    "frontend"
   ],
   "author": "Your Name",
   "license": "MIT"
