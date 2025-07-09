@@ -1,6 +1,5 @@
 import os
 import tempfile
-from typing import Tuple
 
 import requests
 
@@ -8,10 +7,11 @@ import requests
 class FileDownloader:
     """文件下载与临时文件管理接口"""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """初始化文件下载器"""
         self.temp_dir = tempfile.mkdtemp()
 
-    def download(self, url: str) -> Tuple[str, int]:
+    def download(self, url: str) -> tuple[str, int]:
         """下载文件到本地临时目录，返回(文件路径, 文件大小)"""
         try:
             response = requests.get(url, stream=True)
@@ -32,7 +32,7 @@ class FileDownloader:
             return file_path, file_size
 
         except Exception as e:
-            raise Exception(f"下载失败: {str(e)}")
+            raise Exception(f"下载失败: {str(e)}") from e
 
     def cleanup(self, file_path: str) -> None:
         """删除临时文件"""

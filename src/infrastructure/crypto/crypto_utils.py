@@ -7,12 +7,11 @@ from cryptography.fernet import Fernet
 class CryptoUtils:
     """AES-256加密解密工具"""
 
-    def __init__(self):
-        # 生成或加载密钥
-        self.key = self._get_or_create_key()
-        self.cipher = Fernet(self.key)
+    def __init__(self) -> None:
+        """初始化加密工具"""
+        self.key = self._load_or_generate_key()
 
-    def _get_or_create_key(self):
+    def _load_or_generate_key(self) -> bytes:
         """获取或创建加密密钥"""
         key_file = "secret.key"
         if os.path.exists(key_file):
@@ -25,12 +24,14 @@ class CryptoUtils:
             return key
 
     def encrypt(self, plaintext: str) -> str:
-        """加密字符串，返回密文"""
-        encrypted = self.cipher.encrypt(plaintext.encode())
-        return base64.urlsafe_b64encode(encrypted).decode()
+        """加密明文"""
+        cipher = Fernet(self.key)
+        encrypted_data = cipher.encrypt(plaintext.encode())
+        return base64.b64encode(encrypted_data).decode()
 
-    def decrypt(self, ciphertext: str) -> str:
-        """解密字符串，返回明文"""
-        encrypted = base64.urlsafe_b64decode(ciphertext.encode())
-        decrypted = self.cipher.decrypt(encrypted)
-        return decrypted.decode()
+    def decrypt(self, encrypted_text: str) -> str:
+        """解密密文"""
+        cipher = Fernet(self.key)
+        encrypted_data = base64.b64decode(encrypted_text.encode())
+        decrypted_data = cipher.decrypt(encrypted_data)
+        return decrypted_data.decode()

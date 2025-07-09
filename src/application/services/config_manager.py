@@ -5,7 +5,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from ...domain.models import ServerConfig
 from ...infrastructure.crypto.crypto_utils import CryptoUtils
@@ -26,8 +26,8 @@ class ConfigManager:
         self.config_file = "servers.json"
 
     def create_server_config(
-        self, config_data: Dict[str, Union[str, int]]
-    ) -> Dict[str, Union[bool, str, str]]:
+        self, config_data: dict[str, Union[str, int]]
+    ) -> dict[str, Union[bool, str, str]]:
         """创建服务器配置 - 阶段2核心功能
         Args:
             config_data: 服务器配置信息
@@ -57,7 +57,7 @@ class ConfigManager:
                 "port": config_data["port"],
                 "protocol": config_data["protocol"],
                 "username": config_data["username"],
-                "password": self.crypto_utils.encrypt(config_data["password"]),
+                "password": self.crypto_utils.encrypt(str(config_data["password"])),
                 "default_path": config_data["default_path"],
                 "created_at": now.isoformat(),
                 "updated_at": now.isoformat(),
@@ -101,8 +101,8 @@ class ConfigManager:
             return None
 
     def update_server_config(
-        self, config_id: str, config_data: Dict[str, Union[str, int]]
-    ) -> Dict[str, Union[bool, str]]:
+        self, config_id: str, config_data: dict[str, Union[str, int]]
+    ) -> dict[str, Union[bool, str]]:
         """更新服务器配置 - 阶段2核心功能
         Args:
             config_id: 配置ID
@@ -127,7 +127,7 @@ class ConfigManager:
             updated_config = configs[config_index].copy()
             for key, value in config_data.items():
                 if key == "password":
-                    updated_config[key] = self.crypto_utils.encrypt(value)
+                    updated_config[key] = self.crypto_utils.encrypt(str(value))
                 else:
                     updated_config[key] = value
 
@@ -157,7 +157,7 @@ class ConfigManager:
         except Exception as e:
             return {"success": False, "error": f"更新配置失败: {str(e)}"}
 
-    def delete_server_config(self, config_id: str) -> Dict[str, Union[bool, str]]:
+    def delete_server_config(self, config_id: str) -> dict[str, Union[bool, str]]:
         """删除服务器配置 - 阶段2核心功能
         Args:
             config_id: 配置ID
@@ -186,7 +186,7 @@ class ConfigManager:
         except Exception as e:
             return {"success": False, "error": f"删除配置失败: {str(e)}"}
 
-    def list_server_configs(self) -> List[ServerConfig]:
+    def list_server_configs(self) -> list[ServerConfig]:
         """列出所有服务器配置 - 阶段2核心功能
         Returns:
             服务器配置列表
@@ -217,8 +217,8 @@ class ConfigManager:
             return []
 
     def validate_config(
-        self, config_data: Dict[str, Union[str, int]]
-    ) -> Dict[str, Union[bool, str]]:
+        self, config_data: dict[str, Union[str, int]]
+    ) -> dict[str, Union[bool, str]]:
         """验证配置数据 - 阶段2核心功能
         Args:
             config_data: 配置数据
@@ -250,7 +250,7 @@ class ConfigManager:
                     "error": "验证失败: 协议必须是 SFTP、FTP 或 SCP",
                 }
 
-            host = config_data["host"]
+            host = str(config_data["host"])
             if not host or len(host.strip()) == 0:
                 return {"valid": False, "error": "验证失败: 主机地址不能为空"}
 

@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Optional
+import typing
 
 import paramiko
 
@@ -9,18 +9,13 @@ from ...domain.models import ServerConfig
 class SFTPClient:
     """SFTP文件传输客户端接口"""
 
-    def __init__(self, server_config: ServerConfig):
+    def __init__(self, server_config: ServerConfig) -> None:
         """初始化SFTP客户端"""
         self.server_config = server_config
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    def upload(
-        self,
-        local_path: str,
-        remote_path: str,
-        progress_callback: Optional[Callable[[float], None]] = None,
-    ) -> bool:
+    def upload(self, local_path: str, remote_path: str, progress_callback: typing.Optional[typing.Callable[[float], None]] = None) -> bool:
         """上传文件到服务器，支持进度回调，返回是否成功"""
         try:
             # 连接SFTP服务器
@@ -38,7 +33,7 @@ class SFTPClient:
             local_size = os.path.getsize(local_path)
 
             # 上传文件，支持进度回调
-            def progress_callback_wrapper(transferred, to_be_transferred):
+            def progress_callback_wrapper(transferred: int, to_be_transferred: int) -> None:
                 if progress_callback and local_size > 0:
                     progress = transferred / local_size
                     progress_callback(progress)

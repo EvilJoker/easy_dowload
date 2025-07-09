@@ -7,7 +7,7 @@ import threading
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Optional, Union
 
 from ...infrastructure.storage.storage import Storage
 
@@ -64,13 +64,13 @@ class QueueManager:
         self.max_concurrent = max_concurrent
         self.storage_dir = storage_dir or "."
         self.storage = Storage(self.storage_dir)
-        self.tasks: Dict[str, TransferTask] = {}
-        self.progress_callbacks: Dict[str, Callable] = {}
+        self.tasks: dict[str, TransferTask] = {}
+        self.progress_callbacks: dict[str, Callable] = {}
         self.lock = threading.Lock()
 
     def add_task(
-        self, task_data: Dict[str, Union[str, int]]
-    ) -> Dict[str, Union[bool, str, str]]:
+        self, task_data: dict[str, Union[str, int]]
+    ) -> dict[str, Union[bool, str, str]]:
         """添加传输任务 - 阶段2核心功能
         Args:
             task_data: 任务数据
@@ -92,18 +92,17 @@ class QueueManager:
 
             # 创建任务
             task_id = str(uuid.uuid4())
-            now = datetime.now()
 
             task = TransferTask(
                 id=task_id,
-                file_path=task_data["file_path"],
-                file_name=task_data["file_name"],
-                file_size=task_data["file_size"],
-                server_id=task_data["server_id"],
-                target_path=task_data["target_path"],
+                file_path=str(task_data["file_path"]),
+                file_name=str(task_data["file_name"]),
+                file_size=int(task_data["file_size"]),
+                server_id=str(task_data["server_id"]),
+                target_path=str(task_data["target_path"]),
                 status=TaskStatus.PENDING,
                 progress=0.0,
-                started_at=None,
+                started_at=datetime.now().isoformat(),
                 completed_at=None,
                 error_message=None,
             )
@@ -131,7 +130,7 @@ class QueueManager:
         except Exception:
             return None
 
-    def list_tasks(self, status: Optional[TaskStatus] = None) -> List[TransferTask]:
+    def list_tasks(self, status: Optional[TaskStatus] = None) -> list[TransferTask]:
         """列出任务列表 - 阶段2核心功能
         Args:
             status: 任务状态过滤
@@ -149,7 +148,7 @@ class QueueManager:
         except Exception:
             return []
 
-    def cancel_task(self, task_id: str) -> Dict[str, Union[bool, str]]:
+    def cancel_task(self, task_id: str) -> dict[str, Union[bool, str]]:
         """取消任务 - 阶段2核心功能
         Args:
             task_id: 任务ID
@@ -174,7 +173,7 @@ class QueueManager:
         except Exception as e:
             return {"success": False, "error": f"取消任务失败: {str(e)}"}
 
-    def get_queue_status(self) -> Dict[str, Union[int, List[str]]]:
+    def get_queue_status(self) -> dict[str, Union[int, list[str]]]:
         """获取队列状态 - 阶段2核心功能
         Returns:
             队列状态字典
@@ -219,14 +218,13 @@ class QueueManager:
                 "max_concurrent": self.max_concurrent,
             }
 
-    def clear_completed_tasks(self) -> Dict[str, Union[bool, str, int]]:
+    def clear_completed_tasks(self) -> dict[str, Union[bool, str, int]]:
         """清理已完成任务 - 阶段2核心功能
         Returns:
             清理结果字典
         """
         try:
             with self.lock:
-                original_count = len(self.tasks)
                 completed_statuses = [
                     TaskStatus.COMPLETED,
                     TaskStatus.FAILED,
@@ -362,7 +360,8 @@ class QueueManager:
                 }
                 task_list.append(task_dict)
 
-            self.storage.save_tasks(task_list)
+            # 保存为JSON格式，而不是TransferTask对象列表
+            self.storage.save_tasks_json(task_list)
 
         except Exception:
             pass

@@ -88,7 +88,6 @@ def test_api_integration():
     print("Test 5: Error Handling API")
     response = client.get("/errors")
     assert response.status_code == 200
-    errors = response.get_json()
     print("✓ Retrieved error statistics")
 
     # 测试6: 统计信息API

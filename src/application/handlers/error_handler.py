@@ -10,7 +10,7 @@ import random
 import time
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from ...infrastructure.storage.storage import Storage
 
@@ -34,7 +34,7 @@ class ErrorInfo:
         error_message: str,
         error_code: str,
         timestamp: datetime,
-        context: Dict[str, Any],
+        context: dict,
     ):
         self.error_type = error_type
         self.error_message = error_message
@@ -74,7 +74,7 @@ class ErrorHandler:
         self.storage_dir = storage_dir or "."
         self.storage = Storage(self.storage_dir)
         self.error_log_file = os.path.join(self.storage_dir, "error_log.json")
-        self.errors: List[ErrorInfo] = []
+        self.errors: list[ErrorInfo] = []
 
         # 设置日志
         logging.basicConfig(
@@ -89,7 +89,7 @@ class ErrorHandler:
         )
         self.logger = logging.getLogger(__name__)
 
-    def handle_error(self, error: Exception, context: Dict[str, Any]) -> ErrorInfo:
+    def handle_error(self, error: Exception, context: dict) -> ErrorInfo:
         """处理错误 - 阶段2核心功能
         Args:
             error: 异常对象
@@ -129,8 +129,8 @@ class ErrorHandler:
             )
 
     def retry_operation(
-        self, operation: Callable, *args, **kwargs
-    ) -> Dict[str, Union[bool, Any, str]]:
+        self, operation: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> dict[str, Union[bool, Any, str]]:
         """重试操作 - 阶段2核心功能
         Args:
             operation: 要重试的操作函数
@@ -189,36 +189,42 @@ class ErrorHandler:
         except Exception as e:
             self.logger.error(f"记录错误日志失败: {str(e)}")
 
-    def get_error_statistics(self) -> Dict[str, Union[int, List[ErrorInfo]]]:
-        """获取错误统计 - 阶段2核心功能
+    def get_error_statistics(self) -> dict[str, Union[int, dict[str, int], list[dict]]]:
+        """获取错误统计信息 - 阶段2核心功能
         Returns:
-            错误统计字典
+            错误统计信息字典
         """
         try:
             total_errors = len(self.errors)
-            error_types = {}
-            recent_errors = []
-
-            # 统计错误类型
-            for error in self.errors:
-                error_type = error.error_type.value
-                error_types[error_type] = error_types.get(error_type, 0) + 1
-
-            # 获取最近的错误（最近10个）
+            error_types: dict[str, int] = {}
             recent_errors = sorted(
                 self.errors, key=lambda x: x.timestamp, reverse=True
             )[:10]
 
+            recent_errors_dict = []
+            for error in recent_errors:
+                recent_errors_dict.append({
+                    "error_type": error.error_type.value,
+                    "error_message": error.error_message,
+                    "error_code": error.error_code,
+                    "timestamp": error.timestamp.isoformat() if hasattr(error.timestamp, 'isoformat') else str(error.timestamp),
+                    "context": error.context,
+                })
+
             return {
                 "total_errors": total_errors,
                 "error_types": error_types,
-                "recent_errors": recent_errors,
+                "recent_errors": recent_errors_dict,
             }
 
         except Exception:
-            return {"total_errors": 0, "error_types": {}, "recent_errors": []}
+            return {
+                "total_errors": 0,
+                "error_types": {},
+                "recent_errors": [],
+            }
 
-    def clear_error_logs(self, days: int = 7) -> Dict[str, Union[bool, str, int]]:
+    def clear_error_logs(self, days: int = 7) -> dict[str, Union[bool, str, int]]:
         """清理错误日志 - 阶段2核心功能
         Args:
             days: 保留天数，0表示删除所有

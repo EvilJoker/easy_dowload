@@ -299,6 +299,7 @@ main() {
                 ;;
             -a|--all)
                 run_all=true
+                quality_check=true
                 shift
                 ;;
             -c|--clean)

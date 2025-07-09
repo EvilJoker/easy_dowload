@@ -86,7 +86,7 @@ class TestErrorHandler:
 
     def test_log_error_success(self):
         """测试成功记录错误"""
-        error_info = self.error_handler.handle_error(Exception("测试错误"), {})
+        self.error_handler.handle_error(Exception("测试错误"), {})
 
         # 验证错误被记录
         stats = self.error_handler.get_error_statistics()

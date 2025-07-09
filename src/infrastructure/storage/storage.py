@@ -1,6 +1,5 @@
 import json
 import os
-from typing import List
 
 from ...domain.models import TransferTask
 from ..crypto.crypto_utils import CryptoUtils
@@ -15,21 +14,23 @@ class Storage:
         self.servers_file = os.path.join(base_dir, "servers.json")
         self.tasks_file = os.path.join(base_dir, "tasks.json")
 
-    def load_servers(self) -> list:
-        """加载所有服务器配置，返回 dict 列表"""
-        if not os.path.exists(self.servers_file):
+    def load_servers(self) -> list[dict]:
+        try:
+            if os.path.exists(self.servers_file):
+                with open(self.servers_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        return [r for r in data if isinstance(r, dict)]
             return []
-        with open(self.servers_file) as f:
-            data = json.load(f)
-        # 不解密密码，直接返回 dict
-        return data
+        except Exception:
+            return []
 
     def save_servers(self, servers: list) -> None:
         """保存所有服务器配置，参数为 dict 列表"""
         with open(self.servers_file, "w") as f:
             json.dump(servers, f, indent=2)
 
-    def load_tasks(self) -> List[TransferTask]:
+    def load_tasks(self) -> list[TransferTask]:
         """加载所有传输任务"""
         if not os.path.exists(self.tasks_file):
             return []
@@ -55,7 +56,12 @@ class Storage:
             )
         return tasks
 
-    def save_tasks(self, tasks: List[TransferTask]) -> None:
+    def save_tasks_json(self, tasks: list[dict]) -> None:
+        """保存任务字典列表"""
+        with open(self.tasks_file, "w") as f:
+            json.dump(tasks, f, indent=2)
+
+    def save_tasks(self, tasks: list[TransferTask]) -> None:
         """保存所有传输任务"""
         data = []
         for task in tasks:

@@ -1,4 +1,4 @@
-from interfaces.api import create_app
+from .interfaces.api.api import create_app
 
 if __name__ == "__main__":
     app = create_app()

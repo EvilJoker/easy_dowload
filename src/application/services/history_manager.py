@@ -7,31 +7,9 @@ import json
 import os
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
-
-class TransferHistory:
-    """传输历史记录数据模型"""
-
-    def __init__(
-        self,
-        id: str,
-        task_id: str,
-        file_name: str,
-        server_name: str,
-        status: str,
-        file_size: int,
-        duration: float,
-        created_at: str,
-    ):
-        self.id = id
-        self.task_id = task_id
-        self.file_name = file_name
-        self.server_name = server_name
-        self.status = status
-        self.file_size = file_size
-        self.duration = duration
-        self.created_at = created_at
+from ...domain.models import TransferHistory
 
 
 class HistoryManager:
@@ -46,8 +24,8 @@ class HistoryManager:
         self.history_file = os.path.join(self.storage_dir, "history.json")
 
     def add_history_record(
-        self, history_data: Dict[str, Union[str, int, float]]
-    ) -> Dict[str, Union[bool, str, str]]:
+        self, history_data: dict[str, Union[str, int, float]]
+    ) -> dict[str, Union[bool, str, str]]:
         """添加历史记录 - 阶段2核心功能
         Args:
             history_data: 历史记录数据
@@ -104,24 +82,24 @@ class HistoryManager:
             records = self._load_history_records()
             for record in records:
                 if record.get("id") == record_id:
+                    # 确保类型安全
                     return TransferHistory(
-                        id=record["id"],
-                        task_id=record["task_id"],
-                        file_name=record["file_name"],
-                        server_name=record["server_name"],
-                        status=record["status"],
-                        file_size=record["file_size"],
-                        duration=record["duration"],
-                        created_at=record["created_at"],
+                        id=str(record["id"]),
+                        task_id=str(record["task_id"]),
+                        file_name=str(record["file_name"]),
+                        server_name=str(record["server_name"]),
+                        status=str(record["status"]),
+                        file_size=int(record["file_size"]),
+                        duration=float(record["duration"]),
+                        created_at=str(record["created_at"]),
                     )
             return None
-
         except Exception:
             return None
 
     def list_history_records(
         self, limit: int = 50, offset: int = 0
-    ) -> List[TransferHistory]:
+    ) -> list[TransferHistory]:
         """列出历史记录 - 阶段2核心功能
         Args:
             limit: 限制数量
@@ -132,37 +110,30 @@ class HistoryManager:
         try:
             records = self._load_history_records()
             result = []
-
-            # 按创建时间倒序排列
             sorted_records = sorted(
-                records, key=lambda x: x["created_at"], reverse=True
+                records, key=lambda x: str(x["created_at"]), reverse=True
             )
-
-            # 分页处理
             start_index = offset
             end_index = start_index + limit
             paginated_records = sorted_records[start_index:end_index]
-
             for record in paginated_records:
                 result.append(
                     TransferHistory(
-                        id=record["id"],
-                        task_id=record["task_id"],
-                        file_name=record["file_name"],
-                        server_name=record["server_name"],
-                        status=record["status"],
-                        file_size=record["file_size"],
-                        duration=record["duration"],
-                        created_at=record["created_at"],
+                        id=str(record["id"]),
+                        task_id=str(record["task_id"]),
+                        file_name=str(record["file_name"]),
+                        server_name=str(record["server_name"]),
+                        status=str(record["status"]),
+                        file_size=int(record["file_size"]),
+                        duration=float(record["duration"]),
+                        created_at=str(record["created_at"]),
                     )
                 )
-
             return result
-
         except Exception:
             return []
 
-    def delete_history_record(self, record_id: str) -> Dict[str, Union[bool, str]]:
+    def delete_history_record(self, record_id: str) -> dict[str, Union[bool, str]]:
         """删除历史记录 - 阶段2核心功能
         Args:
             record_id: 记录ID
@@ -191,7 +162,7 @@ class HistoryManager:
         except Exception as e:
             return {"success": False, "error": f"删除记录失败: {str(e)}"}
 
-    def clear_history_records(self, days: int = 30) -> Dict[str, Union[bool, str, int]]:
+    def clear_history_records(self, days: int = 30) -> dict[str, Union[bool, str, int]]:
         """清理历史记录 - 阶段2核心功能
         Args:
             days: 保留天数
@@ -215,9 +186,13 @@ class HistoryManager:
             filtered_records = []
 
             for record in records:
-                record_date = datetime.fromisoformat(record["created_at"])
-                if record_date >= cutoff_date:
-                    filtered_records.append(record)
+                try:
+                    record_date = datetime.fromisoformat(str(record["created_at"]))
+                    if record_date >= cutoff_date:
+                        filtered_records.append(record)
+                except Exception:
+                    # 如果日期解析失败，跳过该记录
+                    pass
 
             deleted_count = original_count - len(filtered_records)
             self._save_history_records(filtered_records)
@@ -231,33 +206,35 @@ class HistoryManager:
                 "deleted_count": 0,
             }
 
-    def get_history_statistics(self) -> Dict[str, Union[int, float]]:
+    def get_history_statistics(self) -> dict[str, Union[int, float]]:
         """获取历史统计信息 - 阶段2核心功能
         Returns:
             统计信息字典
         """
         try:
             records = self._load_history_records()
-
             total_records = len(records)
             completed_count = 0
             failed_count = 0
             total_file_size = 0
             total_duration = 0.0
-
             for record in records:
-                if record["status"] == "completed":
+                if str(record["status"]) == "completed":
                     completed_count += 1
-                elif record["status"] == "failed":
+                elif str(record["status"]) == "failed":
                     failed_count += 1
-
-                total_file_size += record["file_size"]
-                total_duration += record["duration"]
-
+                # 类型安全累加
+                try:
+                    total_file_size += int(record["file_size"])
+                except Exception:
+                    pass
+                try:
+                    total_duration += float(record["duration"])
+                except Exception:
+                    pass
             average_duration = (
                 total_duration / total_records if total_records > 0 else 0.0
             )
-
             return {
                 "total_records": total_records,
                 "completed_count": completed_count,
@@ -265,7 +242,6 @@ class HistoryManager:
                 "total_file_size": total_file_size,
                 "average_duration": round(average_duration, 2),
             }
-
         except Exception:
             return {
                 "total_records": 0,
@@ -275,17 +251,22 @@ class HistoryManager:
                 "average_duration": 0.0,
             }
 
-    def _load_history_records(self) -> List[Dict]:
+    def _load_history_records(self) -> list[dict[str, Union[str, int, float]]]:
         """加载历史记录"""
         try:
             if os.path.exists(self.history_file):
                 with open(self.history_file, encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        # 确保每个元素都是 dict
+                        return [
+                            r for r in data if isinstance(r, dict)
+                        ]
             return []
         except Exception:
             return []
 
-    def _save_history_records(self, records: List[Dict]) -> None:
+    def _save_history_records(self, records: list[dict[str, Union[str, int, float]]]) -> None:
         """保存历史记录"""
         try:
             # 确保目录存在
