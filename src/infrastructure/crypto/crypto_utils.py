@@ -1,9 +1,12 @@
-from cryptography.fernet import Fernet
 import base64
 import os
 
+from cryptography.fernet import Fernet
+
+
 class CryptoUtils:
     """AES-256加密解密工具"""
+
     def __init__(self):
         # 生成或加载密钥
         self.key = self._get_or_create_key()
@@ -11,13 +14,13 @@ class CryptoUtils:
 
     def _get_or_create_key(self):
         """获取或创建加密密钥"""
-        key_file = 'secret.key'
+        key_file = "secret.key"
         if os.path.exists(key_file):
-            with open(key_file, 'rb') as f:
+            with open(key_file, "rb") as f:
                 return f.read()
         else:
             key = Fernet.generate_key()
-            with open(key_file, 'wb') as f:
+            with open(key_file, "wb") as f:
                 f.write(key)
             return key
 
@@ -30,4 +33,4 @@ class CryptoUtils:
         """解密字符串，返回明文"""
         encrypted = base64.urlsafe_b64decode(ciphertext.encode())
         decrypted = self.cipher.decrypt(encrypted)
-        return decrypted.decode() 
+        return decrypted.decode()

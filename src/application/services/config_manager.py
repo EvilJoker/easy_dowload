@@ -2,19 +2,19 @@
 配置管理模块 - 阶段2实现
 负责服务器配置的增删改查操作
 """
-from typing import Dict, List, Optional, Union
-from datetime import datetime
+
 import uuid
-import json
-import os
+from datetime import datetime
+from typing import Dict, List, Optional, Union
+
+from ...domain.models import ServerConfig
 from ...infrastructure.crypto.crypto_utils import CryptoUtils
 from ...infrastructure.storage.storage import Storage
-from ...domain.models import ServerConfig
 
 
 class ConfigManager:
     """配置管理接口 - 阶段2核心功能"""
-    
+
     def __init__(self, storage_dir: Optional[str] = None):
         """初始化配置管理器
         Args:
@@ -24,8 +24,10 @@ class ConfigManager:
         self.storage = Storage(self.storage_dir)
         self.crypto_utils = CryptoUtils()
         self.config_file = "servers.json"
-        
-    def create_server_config(self, config_data: Dict[str, Union[str, int]]) -> Dict[str, Union[bool, str, str]]:
+
+    def create_server_config(
+        self, config_data: Dict[str, Union[str, int]]
+    ) -> Dict[str, Union[bool, str, str]]:
         """创建服务器配置 - 阶段2核心功能
         Args:
             config_data: 服务器配置信息
@@ -37,17 +39,17 @@ class ConfigManager:
             validation_result = self.validate_config(config_data)
             if not validation_result["valid"]:
                 return {"success": False, "error": validation_result["error"]}
-            
+
             # 检查名称是否重复
             existing_configs = self.storage.load_servers()
             for config in existing_configs:
                 if config["name"] == config_data["name"]:
                     return {"success": False, "error": "服务器名称已存在"}
-            
+
             # 创建新配置
             config_id = str(uuid.uuid4())
             now = datetime.now()
-            
+
             new_config = {
                 "id": config_id,
                 "name": config_data["name"],
@@ -58,18 +60,18 @@ class ConfigManager:
                 "password": self.crypto_utils.encrypt(config_data["password"]),
                 "default_path": config_data["default_path"],
                 "created_at": now.isoformat(),
-                "updated_at": now.isoformat()
+                "updated_at": now.isoformat(),
             }
-            
+
             # 保存配置
             existing_configs.append(new_config)
             self.storage.save_servers(existing_configs)
-            
+
             return {"success": True, "config_id": config_id}
-            
+
         except Exception as e:
             return {"success": False, "error": f"创建配置失败: {str(e)}"}
-    
+
     def get_server_config(self, config_id: str) -> Optional[ServerConfig]:
         """获取服务器配置 - 阶段2核心功能
         Args:
@@ -91,14 +93,16 @@ class ConfigManager:
                         password=self.crypto_utils.decrypt(config["password"]),
                         default_path=config["default_path"],
                         created_at=config["created_at"],
-                        updated_at=config["updated_at"]
+                        updated_at=config["updated_at"],
                     )
             return None
-            
-        except Exception as e:
+
+        except Exception:
             return None
-    
-    def update_server_config(self, config_id: str, config_data: Dict[str, Union[str, int]]) -> Dict[str, Union[bool, str]]:
+
+    def update_server_config(
+        self, config_id: str, config_data: Dict[str, Union[str, int]]
+    ) -> Dict[str, Union[bool, str]]:
         """更新服务器配置 - 阶段2核心功能
         Args:
             config_id: 配置ID
@@ -109,16 +113,16 @@ class ConfigManager:
         try:
             configs = self.storage.load_servers()
             config_index = None
-            
+
             # 查找配置
             for i, config in enumerate(configs):
                 if config["id"] == config_id:
                     config_index = i
                     break
-            
+
             if config_index is None:
                 return {"success": False, "error": "配置不存在"}
-            
+
             # 合并原有配置和新数据
             updated_config = configs[config_index].copy()
             for key, value in config_data.items():
@@ -126,30 +130,33 @@ class ConfigManager:
                     updated_config[key] = self.crypto_utils.encrypt(value)
                 else:
                     updated_config[key] = value
-            
+
             updated_config["updated_at"] = datetime.now().isoformat()
-            
+
             # 校验合并后的配置
             validation_result = self.validate_config(updated_config)
             if not validation_result["valid"]:
                 return {"success": False, "error": validation_result["error"]}
-            
+
             # 检查名称是否重复（排除当前配置）
             for config in configs:
-                if config["id"] != config_id and config["name"] == updated_config["name"]:
+                if (
+                    config["id"] != config_id
+                    and config["name"] == updated_config["name"]
+                ):
                     return {"success": False, "error": "服务器名称已存在"}
-            
+
             # 更新配置
             configs[config_index] = updated_config
-            
+
             # 保存配置
             self.storage.save_servers(configs)
-            
+
             return {"success": True}
-            
+
         except Exception as e:
             return {"success": False, "error": f"更新配置失败: {str(e)}"}
-    
+
     def delete_server_config(self, config_id: str) -> Dict[str, Union[bool, str]]:
         """删除服务器配置 - 阶段2核心功能
         Args:
@@ -160,25 +167,25 @@ class ConfigManager:
         try:
             configs = self.storage.load_servers()
             config_index = None
-            
+
             # 查找配置
             for i, config in enumerate(configs):
                 if config["id"] == config_id:
                     config_index = i
                     break
-            
+
             if config_index is None:
                 return {"success": False, "error": "配置不存在"}
-            
+
             # 删除配置
             configs.pop(config_index)
             self.storage.save_servers(configs)
-            
+
             return {"success": True}
-            
+
         except Exception as e:
             return {"success": False, "error": f"删除配置失败: {str(e)}"}
-    
+
     def list_server_configs(self) -> List[ServerConfig]:
         """列出所有服务器配置 - 阶段2核心功能
         Returns:
@@ -187,27 +194,31 @@ class ConfigManager:
         try:
             configs = self.storage.load_servers()
             result = []
-            
+
             for config in configs:
-                result.append(ServerConfig(
-                    id=config["id"],
-                    name=config["name"],
-                    host=config["host"],
-                    port=config["port"],
-                    protocol=config["protocol"],
-                    username=config["username"],
-                    password=self.crypto_utils.decrypt(config["password"]),
-                    default_path=config["default_path"],
-                    created_at=config["created_at"],
-                    updated_at=config["updated_at"]
-                ))
-            
+                result.append(
+                    ServerConfig(
+                        id=config["id"],
+                        name=config["name"],
+                        host=config["host"],
+                        port=config["port"],
+                        protocol=config["protocol"],
+                        username=config["username"],
+                        password=self.crypto_utils.decrypt(config["password"]),
+                        default_path=config["default_path"],
+                        created_at=config["created_at"],
+                        updated_at=config["updated_at"],
+                    )
+                )
+
             return result
-            
-        except Exception as e:
+
+        except Exception:
             return []
-    
-    def validate_config(self, config_data: Dict[str, Union[str, int]]) -> Dict[str, Union[bool, str]]:
+
+    def validate_config(
+        self, config_data: Dict[str, Union[str, int]]
+    ) -> Dict[str, Union[bool, str]]:
         """验证配置数据 - 阶段2核心功能
         Args:
             config_data: 配置数据
@@ -215,24 +226,35 @@ class ConfigManager:
             验证结果字典
         """
         try:
-            required_fields = ["name", "host", "port", "protocol", "username", "password", "default_path"]
+            required_fields = [
+                "name",
+                "host",
+                "port",
+                "protocol",
+                "username",
+                "password",
+                "default_path",
+            ]
             for field in required_fields:
                 if field not in config_data or not config_data[field]:
                     return {"valid": False, "error": f"验证失败: 字段 {field} 不能为空"}
-            
+
             port = config_data["port"]
             if not isinstance(port, int) or port < 1 or port > 65535:
                 return {"valid": False, "error": "验证失败: 端口号必须在1-65535之间"}
-            
+
             protocol = config_data["protocol"]
             if protocol not in ["SFTP", "FTP", "SCP"]:
-                return {"valid": False, "error": "验证失败: 协议必须是 SFTP、FTP 或 SCP"}
-            
+                return {
+                    "valid": False,
+                    "error": "验证失败: 协议必须是 SFTP、FTP 或 SCP",
+                }
+
             host = config_data["host"]
             if not host or len(host.strip()) == 0:
                 return {"valid": False, "error": "验证失败: 主机地址不能为空"}
-            
+
             return {"valid": True}
-            
+
         except Exception as e:
-            return {"valid": False, "error": f"验证失败: {str(e)}"} 
+            return {"valid": False, "error": f"验证失败: {str(e)}"}

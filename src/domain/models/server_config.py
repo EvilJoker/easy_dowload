@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class ServerConfig:
     """服务器配置数据模型"""
+
     id: str
     name: str
     host: str
@@ -12,4 +14,4 @@ class ServerConfig:
     password: str  # 加密存储
     default_path: str
     created_at: str
-    updated_at: str 
+    updated_at: str
