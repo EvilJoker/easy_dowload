@@ -112,11 +112,11 @@ easy-translate/
 ### 1. 启动开发模式
 
 ```bash
-# 启动开发服务器
-uv run python src/main.py
+# 启动开发服务器 
+uv run python -m src.main
 
-# 或者使用 uvicorn
-uv run uvicorn src.interfaces.api.main:app --reload
+或者 run.sh
+访问 http://localhost:5000/demo 后端的测试页面
 ```
 
 ### 2. 代码开发

@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy Translate Demo - API & Plugin Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        .demo-section {
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            background: #f8f9fa;
+        }
+        
+        .demo-section h3 {
+            color: #495057;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 0.5rem;
+        }
+        
+        .test-result {
+            margin: 0.5rem 0;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            font-family: monospace;
+            font-size: 0.875rem;
+        }
+        
+        .test-success {
+            background-color: #d1e7dd;
+            color: #0f5132;
+            border: 1px solid #badbcc;
+        }
+        
+        .test-error {
+            background-color: #f8d7da;
+            color: #842029;
+            border: 1px solid #f5c2c7;
+        }
+        
+        .test-info {
+            background-color: #cff4fc;
+            color: #055160;
+            border: 1px solid #b6effb;
+        }
+        
+        .download-link {
+            display: inline-block;
+            margin: 0.25rem;
+            padding: 0.5rem 1rem;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 0.25rem;
+            transition: background-color 0.15s;
+        }
+        
+        .download-link:hover {
+            background: #0056b3;
+            color: white;
+            text-decoration: none;
+        }
+        
+        .plugin-status {
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            margin: 0.5rem 0;
+        }
+        
+        .plugin-active {
+            background-color: #d1e7dd;
+            color: #0f5132;
+        }
+        
+        .plugin-inactive {
+            background-color: #f8d7da;
+            color: #842029;
+        }
+        
+        .server-form {
+            background: white;
+            padding: 1rem;
+            border-radius: 0.25rem;
+            border: 1px solid #dee2e6;
+        }
+        
+        .btn-group-vertical .btn {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">Easy Translate Demo</h1>
+        <p class="text-center text-muted">API连接测试和插件功能测试</p>
+        
+        <!-- API连接测试 -->
+        <div class="demo-section">
+            <h3>🔌 API连接测试</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>后端状态</h5>
+                    <button class="btn btn-primary" onclick="testHealthCheck()">健康检查</button>
+                    <button class="btn btn-info" onclick="testGetServers()">获取服务器列表</button>
+                    <button class="btn btn-success" onclick="testCreateServer()">创建测试服务器</button>
+                    <div id="apiResults"></div>
+                </div>
+                <div class="col-md-6">
+                    <h5>API客户端测试</h5>
+                    <button class="btn btn-warning" onclick="testApiClient()">测试API客户端</button>
+                    <button class="btn btn-secondary" onclick="testDataConversion()">测试数据转换</button>
+                    <div id="clientResults"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 插件功能测试 -->
+        <div class="demo-section">
+            <h3>🔧 插件功能测试</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>插件状态</h5>
+                    <div id="pluginStatus" class="plugin-status plugin-inactive">
+                        正在检测插件状态...
+                    </div>
+                    <button class="btn btn-primary" onclick="checkPluginStatus()">检查插件状态</button>
+                    <button class="btn btn-success" onclick="openPopup()">打开插件弹窗</button>
+                </div>
+                <div class="col-md-6">
+                    <h5>Content Script测试</h5>
+                    <button class="btn btn-info" onclick="testContentScript()">测试Content Script</button>
+                    <button class="btn btn-warning" onclick="injectTestLinks()">注入测试链接</button>
+                    <div id="contentScriptResults"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 下载链接测试 -->
+        <div class="demo-section">
+            <h3>📥 下载链接测试</h3>
+            <p>点击以下链接测试插件是否能正确识别并添加下载按钮：</p>
+            
+            <div class="row">
+                <div class="col-md-4">
+                    <h6>压缩文件</h6>
+                    <a href="https://example.com/test.zip" class="download-link">test.zip</a>
+                    <a href="https://example.com/archive.rar" class="download-link">archive.rar</a>
+                    <a href="https://example.com/data.7z" class="download-link">data.7z</a>
+                </div>
+                <div class="col-md-4">
+                    <h6>文档文件</h6>
+                    <a href="https://example.com/document.pdf" class="download-link">document.pdf</a>
+                    <a href="https://example.com/report.docx" class="download-link">report.docx</a>
+                    <a href="https://example.com/presentation.pptx" class="download-link">presentation.pptx</a>
+                </div>
+                <div class="col-md-4">
+                    <h6>可执行文件</h6>
+                    <a href="https://example.com/installer.exe" class="download-link">installer.exe</a>
+                    <a href="https://example.com/app.dmg" class="download-link">app.dmg</a>
+                    <a href="https://example.com/package.deb" class="download-link">package.deb</a>
+                </div>
+            </div>
+            
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <h6>媒体文件</h6>
+                    <a href="https://example.com/video.mp4" class="download-link">video.mp4</a>
+                    <a href="https://example.com/audio.mp3" class="download-link">audio.mp3</a>
+                    <a href="https://example.com/image.iso" class="download-link">image.iso</a>
+                </div>
+                <div class="col-md-6">
+                    <h6>特殊链接</h6>
+                    <a href="https://example.com/download?file=test.zip" class="download-link">download?file=test.zip</a>
+                    <a href="https://example.com/releases/download/v1.0/app.exe" class="download-link">releases/download/v1.0/app.exe</a>
+                    <a href="https://example.com/files/attachment.pdf" class="download-link">files/attachment.pdf</a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 服务器管理测试 -->
+        <div class="demo-section">
+            <h3>🖥️ 服务器管理测试</h3>
+            <div class="server-form">
+                <h6>创建测试服务器</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="serverName" class="form-label">服务器名称</label>
+                            <input type="text" class="form-control" id="serverName" value="测试服务器">
+                        </div>
+                        <div class="mb-3">
+                            <label for="serverHost" class="form-label">主机地址</label>
+                            <input type="text" class="form-control" id="serverHost" value="192.168.1.100">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="serverPort" class="form-label">端口</label>
+                            <input type="number" class="form-control" id="serverPort" value="22">
+                        </div>
+                        <div class="mb-3">
+                            <label for="serverUsername" class="form-label">用户名</label>
+                            <input type="text" class="form-control" id="serverUsername" value="testuser">
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="serverPassword" class="form-label">密码</label>
+                    <input type="password" class="form-control" id="serverPassword" value="testpass">
+                </div>
+                <button class="btn btn-primary" onclick="createTestServer()">创建测试服务器</button>
+                <button class="btn btn-secondary" onclick="listServers()">列出所有服务器</button>
+                <div id="serverResults"></div>
+            </div>
+        </div>
+        
+        <!-- 日志输出 -->
+        <div class="demo-section">
+            <h3>📋 测试日志</h3>
+            <div id="logOutput" style="background: #f8f9fa; padding: 1rem; border-radius: 0.25rem; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.875rem;">
+                <div class="text-muted">等待测试结果...</div>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm mt-2" onclick="clearLog()">清空日志</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // 导入API客户端
+        import { apiClient } from '/static/api-client.js';
+        
+        // 全局变量
+        window.apiClient = apiClient;
+        window.testResults = [];
+        
+        // 日志函数
+        function log(message, type = 'info') {
+            const logOutput = document.getElementById('logOutput');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `test-${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logOutput.appendChild(logEntry);
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+        
+        // 显示测试结果
+        function showResult(containerId, message, type = 'info') {
+            const container = document.getElementById(containerId);
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result test-${type}`;
+            resultDiv.textContent = message;
+            container.appendChild(resultDiv);
+            
+            // 限制结果数量
+            const results = container.querySelectorAll('.test-result');
+            if (results.length > 5) {
+                results[0].remove();
+            }
+        }
+        
+        // API测试函数
+        window.testHealthCheck = async function() {
+            try {
+                log('开始健康检查...', 'info');
+                const result = await apiClient.healthCheck();
+                log(`健康检查成功: ${JSON.stringify(result)}`, 'success');
+                showResult('apiResults', `✅ 健康检查成功: ${result.status}`, 'success');
+            } catch (error) {
+                log(`健康检查失败: ${error.message}`, 'error');
+                showResult('apiResults', `❌ 健康检查失败: ${error.message}`, 'error');
+            }
+        };
+        
+        window.testGetServers = async function() {
+            try {
+                log('获取服务器列表...', 'info');
+                const servers = await apiClient.getServers();
+                log(`获取服务器列表成功: ${servers.length} 个服务器`, 'success');
+                showResult('apiResults', `✅ 获取服务器列表成功: ${servers.length} 个服务器`, 'success');
+            } catch (error) {
+                log(`获取服务器列表失败: ${error.message}`, 'error');
+                showResult('apiResults', `❌ 获取服务器列表失败: ${error.message}`, 'error');
+            }
+        };
+        
+        window.testCreateServer = async function() {
+            try {
+                log('创建测试服务器...', 'info');
+                const testServer = {
+                    name: 'Demo测试服务器',
+                    host: 'demo.example.com',
+                    port: 22,
+                    username: 'demo',
+                    password: 'demo123',
+                    defaultPath: '/home/demo/'
+                };
+                
+                const backendData = apiClient.convertFrontendToBackend(testServer);
+                const result = await apiClient.createServer(backendData);
+                log(`创建测试服务器成功: ${JSON.stringify(result)}`, 'success');
+                showResult('apiResults', `✅ 创建测试服务器成功`, 'success');
+            } catch (error) {
+                log(`创建测试服务器失败: ${error.message}`, 'error');
+                showResult('apiResults', `❌ 创建测试服务器失败: ${error.message}`, 'error');
+            }
+        };
+        
+        window.testApiClient = async function() {
+            try {
+                log('测试API客户端...', 'info');
+                
+                // 测试基础方法
+                const health = await apiClient.healthCheck();
+                log('✅ 健康检查通过', 'success');
+                
+                const servers = await apiClient.getServers();
+                log(`✅ 获取服务器列表通过: ${servers.length} 个`, 'success');
+                
+                showResult('clientResults', `✅ API客户端测试通过`, 'success');
+            } catch (error) {
+                log(`API客户端测试失败: ${error.message}`, 'error');
+                showResult('clientResults', `❌ API客户端测试失败: ${error.message}`, 'error');
+            }
+        };
+        
+        window.testDataConversion = function() {
+            try {
+                log('测试数据转换...', 'info');
+                
+                // 测试前端到后端转换
+                const frontendServer = {
+                    name: '测试服务器',
+                    host: 'test.example.com',
+                    port: 22,
+                    username: 'test',
+                    password: 'test123',
+                    defaultPath: '/home/test/'
+                };
+                
+                const backendServer = apiClient.convertFrontendToBackend(frontendServer);
+                log('✅ 前端到后端转换通过', 'success');
+                
+                // 测试后端到前端转换
+                const convertedBackendServer = {
+                    id: 'test-id',
+                    name: '测试服务器',
+                    host: 'test.example.com',
+                    port: 22,
+                    protocol: 'SFTP',
+                    username: 'test',
+                    password: 'test123',
+                    default_path: '/home/test/',
+                    created_at: '2024-01-01T00:00:00Z',
+                    updated_at: '2024-01-01T00:00:00Z'
+                };
+                
+                const frontendServer2 = apiClient.convertBackendToFrontend(convertedBackendServer);
+                log('✅ 后端到前端转换通过', 'success');
+                
+                showResult('clientResults', `✅ 数据转换测试通过`, 'success');
+            } catch (error) {
+                log(`数据转换测试失败: ${error.message}`, 'error');
+                showResult('clientResults', `❌ 数据转换测试失败: ${error.message}`, 'error');
+            }
+        };
+        
+        // 插件测试函数
+        window.checkPluginStatus = function() {
+            log('检查插件状态...', 'info');
+            
+            const statusDiv = document.getElementById('pluginStatus');
+            
+            // 检查Chrome扩展API是否可用
+            if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
+                statusDiv.className = 'plugin-status plugin-active';
+                statusDiv.textContent = '✅ 插件已安装并激活';
+                log('✅ 插件已安装并激活', 'success');
+            } else {
+                statusDiv.className = 'plugin-status plugin-inactive';
+                statusDiv.textContent = '❌ 插件未安装或未激活';
+                log('❌ 插件未安装或未激活', 'error');
+            }
+        };
+        
+        window.openPopup = function() {
+            log('尝试打开插件弹窗...', 'info');
+            
+            if (typeof chrome !== 'undefined' && chrome.action) {
+                chrome.action.openPopup();
+                log('✅ 插件弹窗已打开', 'success');
+            } else {
+                log('❌ 无法打开插件弹窗', 'error');
+            }
+        };
+        
+        window.testContentScript = function() {
+            log('测试Content Script...', 'info');
+            
+            // 检查是否有下载按钮被注入
+            const downloadButtons = document.querySelectorAll('[data-easy-translate-download]');
+            if (downloadButtons.length > 0) {
+                log(`✅ Content Script正常工作，发现 ${downloadButtons.length} 个下载按钮`, 'success');
+                showResult('contentScriptResults', `✅ Content Script正常: ${downloadButtons.length} 个下载按钮`, 'success');
+            } else {
+                log('❌ 未发现下载按钮，Content Script可能未正常工作', 'error');
+                showResult('contentScriptResults', '❌ Content Script未正常工作', 'error');
+            }
+        };
+        
+        window.injectTestLinks = function() {
+            log('注入测试链接...', 'info');
+            
+            // 创建一些测试链接
+            const testLinks = [
+                { url: 'https://example.com/test1.zip', text: '测试文件1.zip' },
+                { url: 'https://example.com/test2.pdf', text: '测试文件2.pdf' },
+                { url: 'https://example.com/test3.exe', text: '测试文件3.exe' }
+            ];
+            
+            const container = document.createElement('div');
+            container.innerHTML = '<h6>动态注入的测试链接:</h6>';
+            
+            testLinks.forEach(link => {
+                const a = document.createElement('a');
+                a.href = link.url;
+                a.textContent = link.text;
+                a.className = 'download-link';
+                container.appendChild(a);
+            });
+            
+            document.querySelector('.demo-section:nth-child(3)').appendChild(container);
+            log('✅ 测试链接已注入', 'success');
+        };
+        
+        // 服务器管理测试函数
+        window.createTestServer = async function() {
+            try {
+                const serverData = {
+                    name: document.getElementById('serverName').value,
+                    host: document.getElementById('serverHost').value,
+                    port: parseInt(document.getElementById('serverPort').value),
+                    username: document.getElementById('serverUsername').value,
+                    password: document.getElementById('serverPassword').value,
+                    defaultPath: '/home/uploads/'
+                };
+                
+                log('创建测试服务器...', 'info');
+                const backendData = apiClient.convertFrontendToBackend(serverData);
+                const result = await apiClient.createServer(backendData);
+                
+                log(`✅ 测试服务器创建成功: ${result.id}`, 'success');
+                showResult('serverResults', `✅ 服务器创建成功: ${serverData.name}`, 'success');
+            } catch (error) {
+                let detail = error.message;
+                // 兼容 fetch/axios/Response
+                if (error.response && typeof error.response.json === 'function') {
+                    try {
+                        const data = await error.response.json();
+                        if (data && data.error) {
+                            detail = data.error;
+                        }
+                    } catch (e) {}
+                }
+                if (error instanceof Response) {
+                    try {
+                        const data = await error.json();
+                        if (data && data.error) {
+                            detail = data.error;
+                        }
+                    } catch (e) {}
+                }
+                log(`❌ 创建测试服务器失败: ${detail}`, 'error');
+                showResult('serverResults', `❌ 创建失败: ${detail}`, 'error');
+            }
+        };
+        
+        window.listServers = async function() {
+            try {
+                log('获取服务器列表...', 'info');
+                const servers = await apiClient.getServers();
+                
+                if (servers.length === 0) {
+                    log('📋 服务器列表为空', 'info');
+                    showResult('serverResults', '📋 服务器列表为空', 'info');
+                } else {
+                    log(`📋 找到 ${servers.length} 个服务器:`, 'info');
+                    servers.forEach(server => {
+                        log(`  - ${server.name} (${server.host}:${server.port})`, 'info');
+                    });
+                    showResult('serverResults', `📋 找到 ${servers.length} 个服务器`, 'info');
+                }
+            } catch (error) {
+                log(`❌ 获取服务器列表失败: ${error.message}`, 'error');
+                showResult('serverResults', `❌ 获取失败: ${error.message}`, 'error');
+            }
+        };
+        
+        window.clearLog = function() {
+            document.getElementById('logOutput').innerHTML = '<div class="text-muted">日志已清空...</div>';
+        };
+        
+        // 页面加载时自动检查插件状态
+        document.addEventListener('DOMContentLoaded', function() {
+            log('Demo页面已加载', 'info');
+            setTimeout(checkPluginStatus, 1000);
+        });
+        
+        // 监听来自插件的消息
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+                log(`收到插件消息: ${JSON.stringify(message)}`, 'info');
+                sendResponse({ received: true });
+            });
+        }
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 

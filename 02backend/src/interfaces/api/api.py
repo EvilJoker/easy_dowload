@@ -1,8 +1,9 @@
 import datetime
 import threading
 from typing import Union
+import os
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 from ...application.handlers.error_handler import ErrorHandler
 from ...application.services.config_manager import ConfigManager
@@ -14,7 +15,8 @@ from ...infrastructure.network.sftp_client import SFTPClient
 
 def create_app() -> Flask:
     """创建Flask应用，注册所有RESTful接口"""
-    app = Flask(__name__)
+    static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'static'))
+    app = Flask(__name__, static_folder=static_dir)
     downloader = FileDownloader()
 
     # 阶段2核心模块初始化
@@ -221,7 +223,10 @@ def create_app() -> Flask:
             else:
                 return jsonify({"success": True, "config_id": config_id}), 201
         else:
-            return jsonify({"error": result["error"]}), 400
+            # 优化：返回详细错误信息，并打印日志
+            error_detail = result.get("error", "未知错误")
+            print(f"[API] 创建服务器失败: {error_detail}")
+            return jsonify({"error": error_detail}), 400
 
     @app.route("/servers/<server_id>", methods=["GET"])
     def get_server(server_id: str) -> Union[Response, tuple[Response, int]]:
@@ -414,5 +419,11 @@ def create_app() -> Flask:
                 "timestamp": datetime.datetime.now().isoformat(),
             }
         )
+
+    @app.route('/demo', methods=['GET'])
+    def serve_demo_html():
+        """提供 demo.html 静态页面（绝对路径，指向 02backend/static/）"""
+        static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'static'))
+        return send_from_directory(static_dir, 'demo.html')
 
     return app
