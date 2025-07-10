@@ -259,14 +259,14 @@ class HistoryManager:
                     data = json.load(f)
                     if isinstance(data, list):
                         # 确保每个元素都是 dict
-                        return [
-                            r for r in data if isinstance(r, dict)
-                        ]
+                        return [r for r in data if isinstance(r, dict)]
             return []
         except Exception:
             return []
 
-    def _save_history_records(self, records: list[dict[str, Union[str, int, float]]]) -> None:
+    def _save_history_records(
+        self, records: list[dict[str, Union[str, int, float]]]
+    ) -> None:
         """保存历史记录"""
         try:
             # 确保目录存在

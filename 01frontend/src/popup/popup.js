@@ -1,7 +1,9 @@
 // popup.js - Easy Translate插件的popup页面脚本 - 带任务管理版本
 
 // 导入API客户端
-import { apiClient } from '../shared/api-client.js';
+import ApiClient from '../shared/api-client.js';
+const apiClient = new ApiClient();
+apiClient.setBaseUrl('http://localhost:5000');
 
 class PopupController {
     constructor() {

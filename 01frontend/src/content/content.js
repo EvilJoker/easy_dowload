@@ -1,5 +1,7 @@
 // Easy Translate Content Script - 页面级控制版本
-import { apiClient } from '../shared/api-client.js';
+import ApiClient from '../shared/api-client.js';
+const apiClient = new ApiClient();
+apiClient.setBaseUrl('http://localhost:5000');
 
 class EasyTranslateContent {
     constructor() {
@@ -665,17 +667,36 @@ class EasyTranslateContent {
             this.showAlert('请选择服务器', 'warning');
             return;
         }
+        const serverId = select.value;
+        const targetPath = pathInput.value || '/home/uploads/';
+        const fileUrl = url;
+        // 1. 触发浏览器下载
+        const filename = this.extractFileName(fileUrl);
+        const a = document.createElement('a');
+        a.href = fileUrl;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => document.body.removeChild(a), 100);
+        this.showAlert('文件已开始下载，请确保下载完成后再进行传输...', 'info');
+        // 2. 拼接本地路径并通知后端
+        // TODO: 后续支持用户自定义下载路径
+        const DOWNLOAD_DIR = '~/Download';
+        const localPath = `${DOWNLOAD_DIR}/${filename}`;
+        // 3. 通过统一任务流通知后台自动下载和上传
         try {
-            // 直接调用后端API发起传输
-            const result = await apiClient.startTransfer({
-                file_url: url,
-                server_id: select.value,
-                target_path: pathInput.value || '/home/uploads/'
+            chrome.runtime.sendMessage({
+                action: 'startDownload',
+                url: fileUrl,
+                fileName: filename,
+                serverId: serverId,
+                targetPath: targetPath
             });
-            this.showDetailedAlert('传输任务已启动', 'success', '任务开始');
+            this.showAlert('已通知后台自动下载并上传', 'success');
             dialog.remove();
         } catch (error) {
-            this.showDetailedAlert('启动传输失败: ' + error.message, 'error', '传输失败');
+            this.showAlert('通知后台上传失败: ' + error.message, 'error');
         }
     }
 

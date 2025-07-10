@@ -203,13 +203,19 @@ class ErrorHandler:
 
             recent_errors_dict = []
             for error in recent_errors:
-                recent_errors_dict.append({
-                    "error_type": error.error_type.value,
-                    "error_message": error.error_message,
-                    "error_code": error.error_code,
-                    "timestamp": error.timestamp.isoformat() if hasattr(error.timestamp, 'isoformat') else str(error.timestamp),
-                    "context": error.context,
-                })
+                recent_errors_dict.append(
+                    {
+                        "error_type": error.error_type.value,
+                        "error_message": error.error_message,
+                        "error_code": error.error_code,
+                        "timestamp": (
+                            error.timestamp.isoformat()
+                            if hasattr(error.timestamp, "isoformat")
+                            else str(error.timestamp)
+                        ),
+                        "context": error.context,
+                    }
+                )
 
             return {
                 "total_errors": total_errors,

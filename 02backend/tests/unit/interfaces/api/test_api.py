@@ -28,16 +28,6 @@ class TestAPI:
         assert "timestamp" in data
 
     @pytest.mark.skip(reason="需集成测试或mock依赖")
-    def test_transfer_post(self):
-        """测试文件传输接口（跳过，需要完整集成测试）"""
-        pass
-
-    @pytest.mark.skip(reason="需集成测试或mock依赖")
-    def test_progress_get(self):
-        """测试进度查询接口（跳过，需要完整集成测试）"""
-        pass
-
-    @pytest.mark.skip(reason="需集成测试或mock依赖")
     def test_servers_get_post(self):
         """测试服务器配置接口（跳过，需要完整集成测试）"""
         pass

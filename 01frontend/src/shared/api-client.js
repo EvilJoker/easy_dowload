@@ -173,15 +173,6 @@ class ApiClient {
     }
 
     /**
-     * 发起文件传输
-     * @param {Object} transferData - 传输数据
-     * @returns {Promise<Object>} 传输结果
-     */
-    async startTransfer(transferData) {
-        return this.post('/transfer', transferData);
-    }
-
-    /**
      * 取消任务
      * @param {string} taskId - 任务ID
      * @returns {Promise<Object>} 取消结果
@@ -338,13 +329,32 @@ class ApiClient {
             targetPath: backendTask.target_path
         };
     }
+
+    /**
+     * 上传本地文件到服务器
+     * @param {Object} params - 上传参数对象
+     * @param {string} params.local_path - 本地文件路径（如 ~/Downloads/xxx.zip）
+     * @param {string} params.server_id - 目标服务器ID
+     * @param {string} params.target_path - 服务器目标路径
+     * @returns {Promise<Object>} 上传结果对象 { success: boolean, ... }
+     */
+    async uploadFile(params) {
+        const form = new URLSearchParams(params).toString();
+        const resp = await fetch(`${this.baseUrl}/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: form
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return await resp.json();
+    }
 }
 
 // 创建全局API客户端实例
 const apiClient = new ApiClient();
 
 // 导出API客户端
-export { ApiClient, apiClient };
+export default ApiClient;
 
 // 兼容性导出（用于非模块环境）
 if (typeof module !== 'undefined' && module.exports) {

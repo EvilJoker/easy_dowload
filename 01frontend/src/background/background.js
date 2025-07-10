@@ -1,6 +1,11 @@
 // Easy Translate Background Script
 console.log('Easy Translate background script loaded');
 
+// 引入 api-client.js
+import ApiClient from '../shared/api-client.js';
+const apiClient = new ApiClient();
+apiClient.setBaseUrl('http://localhost:5000');
+
 // 任务状态枚举
 const TaskStatus = {
     PENDING: 'pending',
@@ -112,7 +117,7 @@ class DownloadManager {
         if (downloadDelta.filename && downloadDelta.filename.current) {
             const actualFileName = downloadDelta.filename.current.split('/').pop().split('\\').pop();
             if (actualFileName !== task.fileName) {
-                console.log(`File name updated for task ${taskId}: ${task.fileName} → ${actualFileName}`);
+                console.log(`[DEBUG] [updateTaskFromDownload] File name updated for task ${taskId}: ${task.fileName} → ${actualFileName}`);
                 task.fileName = actualFileName;
                 task.actualFileName = actualFileName;
             }
@@ -128,34 +133,27 @@ class DownloadManager {
                 case 'complete':
                     task.status = TaskStatus.DOWNLOAD_COMPLETE;
                     task.downloadCompleteTime = new Date().toISOString();
-                    
-                    // 在下载完成时，确保获取最终的文件名
+                    console.log(`[DEBUG] [updateTaskFromDownload] Download complete for task ${taskId}, will trigger startTransferForTask`);
                     try {
                         const downloadItem = await this.getDownloadItem(task.downloadId);
                         if (downloadItem.filename) {
                             const finalFileName = downloadItem.filename.split('/').pop().split('\\').pop();
                             if (finalFileName !== task.fileName) {
-                                console.log(`Final file name for task ${taskId}: ${finalFileName}`);
+                                console.log(`[DEBUG] [updateTaskFromDownload] Final file name for task ${taskId}: ${finalFileName}`);
                                 task.fileName = finalFileName;
                                 task.actualFileName = finalFileName;
                             }
                         }
                     } catch (error) {
-                        console.warn(`Could not get final filename for task ${taskId}:`, error);
+                        console.warn(`[DEBUG] [updateTaskFromDownload] Could not get final filename for task ${taskId}:`, error);
                     }
-                    
-                    // 先通知下载完成
                     this.notifyTaskUpdate(taskId, task);
-                    
-                    // 下载完成，准备开始传输（如果有服务器配置）
                     if (task.serverId) {
-                        // 添加短暂延迟让用户看到下载完成状态
                         setTimeout(async () => {
-                            console.log(`Download completed for task ${taskId}, starting upload...`);
+                            console.log(`[DEBUG] [updateTaskFromDownload] Calling startTransferForTask for task ${taskId}`);
                             await this.startTransferForTask(taskId);
-                        }, 1000); // 1秒延迟
+                        }, 1000);
                     } else {
-                        // 没有服务器配置，直接标记为完成
                         task.status = TaskStatus.COMPLETE;
                         task.completeTime = new Date().toISOString();
                         this.notifyTaskUpdate(taskId, task);
@@ -168,13 +166,12 @@ class DownloadManager {
                     break;
             }
         }
-
-        // 通知UI更新
         this.notifyTaskUpdate(taskId, task);
     }
 
     // 开始下载任务
     async startDownloadTask(url, fileName, serverId, targetPath) {
+        console.log('[DEBUG] startDownloadTask called with:', { url, fileName, serverId, targetPath });
         const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         const task = {
@@ -244,11 +241,38 @@ class DownloadManager {
         }
     }
 
-    // 开始传输任务
+    // 真实的文件传输功能
+    async transferFile(taskId, filePath) {
+        const task = this.activeTasks.get(taskId);
+        if (!task.serverId) {
+            console.error(`[DEBUG] [transferFile] 未配置服务器ID for task ${taskId}`);
+            throw new Error('未配置服务器');
+        }
+        console.log(`[DEBUG] [transferFile] will fetch /upload for task ${taskId}, filePath=${filePath}`);
+        const serverConfig = await this.getServerConfig(task.serverId);
+        if (!serverConfig) {
+            console.error(`[DEBUG] [transferFile] 服务器配置不存在 for task ${taskId}`);
+            throw new Error('服务器配置不存在');
+        }
+        try {
+            const result = await apiClient.uploadFile({
+                local_path: filePath,
+                server_id: serverConfig.id || task.serverId,
+                target_path: task.targetPath
+            });
+            if (!result.success) throw new Error(result.error || '上传失败');
+            console.log(`[DEBUG] [transferFile] 上传成功 for task ${taskId}`);
+        } catch (error) {
+            console.error(`[DEBUG] [transferFile] 上传失败 for task ${taskId}:`, error);
+            throw error;
+        }
+    }
+
+    // 修改 startTransferForTask 调用 transferFile 替代 simulateTransfer
     async startTransferForTask(taskId) {
+        console.log(`[DEBUG] [startTransferForTask] called for task ${taskId}`);
         const task = this.activeTasks.get(taskId);
         if (!task || !task.serverId) {
-            // 如果没有服务器配置，下载完成即为最终完成状态
             if (task && !task.serverId) {
                 task.status = TaskStatus.COMPLETE;
                 task.completeTime = new Date().toISOString();
@@ -257,40 +281,25 @@ class DownloadManager {
             }
             return;
         }
-
-        // 设置为传输中状态并通知
         task.status = TaskStatus.TRANSFERRING;
         task.uploadStartTime = new Date().toISOString();
-        console.log(`Starting upload for task ${taskId}...`);
+        console.log(`[DEBUG] [startTransferForTask] Starting upload for task ${taskId}...`);
         this.notifyTaskUpdate(taskId, task);
-
         try {
-            // 获取下载的文件信息
             const downloadItem = await this.getDownloadItem(task.downloadId);
             const localFilePath = downloadItem.filename;
-
-            console.log(`Starting transfer for task ${taskId}, file: ${localFilePath}`);
-
-            // 真实的文件传输功能
-            await this.simulateTransfer(taskId, localFilePath);
-
+            console.log(`[DEBUG] [startTransferForTask] Starting transfer for task ${taskId}, file: ${localFilePath}`);
+            await this.transferFile(taskId, localFilePath);
             task.status = TaskStatus.COMPLETE;
             task.completeTime = new Date().toISOString();
-            
-            console.log(`Upload completed successfully for task ${taskId}`);
-            
-            // 通知UI更新
+            console.log(`[DEBUG] [startTransferForTask] Upload completed successfully for task ${taskId}`);
             this.notifyTaskUpdate(taskId, task);
-            
-            // 移动到历史记录
             this.moveTaskToHistory(taskId);
-
         } catch (error) {
-            console.error(`Upload failed for task ${taskId}:`, error);
+            console.error(`[DEBUG] [startTransferForTask] Upload failed for task ${taskId}:`, error);
             task.status = TaskStatus.FAILED;
             task.error = `上传失败: ${error.message}`;
             this.notifyTaskUpdate(taskId, task);
-            // 传输失败的任务也移动到历史记录
             this.moveTaskToHistory(taskId);
         }
     }
@@ -308,333 +317,17 @@ class DownloadManager {
         });
     }
 
-    // 真实的文件传输功能
-    async simulateTransfer(taskId, filePath) {
-        const task = this.activeTasks.get(taskId);
-        if (!task.serverId) {
-            console.error(`[UPLOAD] Task ${taskId}: 未配置服务器ID`);
-            throw new Error('未配置服务器');
-        }
-
-        console.log(`[UPLOAD] Task ${taskId}: 开始获取服务器配置，服务器ID: ${task.serverId}`);
-        
-        // 获取服务器配置
-        const serverConfig = await this.getServerConfig(task.serverId);
-        if (!serverConfig) {
-            console.error(`[UPLOAD] Task ${taskId}: 服务器配置不存在，服务器ID: ${task.serverId}`);
-            
-            // 列出所有可用的服务器配置用于调试
-            try {
-                const result = await chrome.storage.local.get(['servers']);
-                const servers = result.servers || [];
-                console.log(`[UPLOAD] Task ${taskId}: 可用的服务器配置:`, servers.map(s => ({ id: s.id, name: s.name })));
-            } catch (e) {
-                console.error(`[UPLOAD] Task ${taskId}: 无法获取服务器列表:`, e);
-            }
-            
-            throw new Error('服务器配置不存在');
-        }
-
-        console.log(`[UPLOAD] Task ${taskId}: 服务器配置获取成功:`, {
-            name: serverConfig.name,
-            host: serverConfig.host,
-            port: serverConfig.port,
-            protocol: serverConfig.protocol,
-            username: serverConfig.username,
-            defaultPath: serverConfig.defaultPath
-        });
-        
-        console.log(`[UPLOAD] Task ${taskId}: 开始上传文件到服务器 ${serverConfig.name} (${serverConfig.host}:${serverConfig.port})`);
-        console.log(`[UPLOAD] Task ${taskId}: 目标路径: ${task.targetPath}`);
-        console.log(`[UPLOAD] Task ${taskId}: 文件名: ${task.fileName}`);
-        
-        try {
-            // 根据协议类型选择上传方式
-            switch (serverConfig.protocol) {
-                case 'http':
-                case 'https':
-                    console.log(`[UPLOAD] Task ${taskId}: 使用 HTTP 协议上传`);
-                    await this.uploadViaHttp(taskId, filePath, serverConfig);
-                    break;
-                case 'sftp':
-                case 'ftp':
-                case 'scp':
-                    console.log(`[UPLOAD] Task ${taskId}: 使用 ${serverConfig.protocol.toUpperCase()} 协议上传`);
-                    // 对于SFTP/FTP，我们暂时模拟上传（因为浏览器环境限制）
-                    await this.simulateFileTransfer(taskId, serverConfig);
-                    break;
-                default:
-                    console.error(`[UPLOAD] Task ${taskId}: 不支持的协议: ${serverConfig.protocol}`);
-                    throw new Error(`不支持的协议: ${serverConfig.protocol}`);
-            }
-            
-            console.log(`[UPLOAD] Task ${taskId}: 上传完成成功`);
-        } catch (error) {
-            console.error(`[UPLOAD] Task ${taskId}: 上传失败:`, error);
-            console.error(`[UPLOAD] Task ${taskId}: 错误堆栈:`, error.stack);
-            throw error;
-        }
-    }
-
     // 获取服务器配置
     async getServerConfig(serverId) {
+        // 统一通过 api-client 获取服务器配置
         try {
-            console.log(`[CONFIG] 获取服务器配置，ID: ${serverId}`);
-            const result = await chrome.storage.local.get(['servers']);
-            const servers = result.servers || [];
-            console.log(`[CONFIG] 存储中的服务器数量: ${servers.length}`);
-            
-            const serverConfig = servers.find(server => server.id === serverId);
-            if (serverConfig) {
-                console.log(`[CONFIG] 找到服务器配置: ${serverConfig.name}`);
-            } else {
-                console.warn(`[CONFIG] 未找到服务器配置，ID: ${serverId}`);
-                console.log(`[CONFIG] 可用的服务器ID列表:`, servers.map(s => s.id));
-            }
-            
-            return serverConfig;
-        } catch (error) {
-            console.error('[CONFIG] 获取服务器配置失败:', error);
+            const config = await apiClient.getServer(serverId);
+            if (!config || config.error) return null;
+            return config;
+        } catch (e) {
+            console.error('[CONFIG] 获取服务器配置失败:', e);
             return null;
         }
-    }
-
-    // HTTP上传
-    async uploadViaHttp(taskId, filePath, serverConfig) {
-        const task = this.activeTasks.get(taskId);
-        
-        try {
-            console.log(`[HTTP] Task ${taskId}: 开始 HTTP 上传流程`);
-            
-            // 获取下载的文件内容
-            console.log(`[HTTP] Task ${taskId}: 获取下载文件信息，下载ID: ${task.downloadId}`);
-            const downloadItem = await this.getDownloadItem(task.downloadId);
-            
-            if (!downloadItem) {
-                console.error(`[HTTP] Task ${taskId}: 无法获取下载项目`);
-                throw new Error('无法获取下载项目');
-            }
-            
-            console.log(`[HTTP] Task ${taskId}: 下载文件信息:`, {
-                filename: downloadItem.filename,
-                state: downloadItem.state,
-                totalBytes: downloadItem.totalBytes,
-                receivedBytes: downloadItem.receivedBytes
-            });
-
-            if (!downloadItem.filename) {
-                console.error(`[HTTP] Task ${taskId}: 下载文件路径为空`);
-                throw new Error('无法获取下载文件路径');
-            }
-
-            // 构建上传URL
-            const uploadUrl = this.buildUploadUrl(serverConfig, task.targetPath);
-            console.log(`[HTTP] Task ${taskId}: 构建上传URL: ${uploadUrl}`);
-
-            // 记录上传参数
-            const uploadParams = {
-                url: uploadUrl,
-                method: 'POST',
-                fileName: task.fileName,
-                targetPath: task.targetPath,
-                serverHost: serverConfig.host,
-                serverPort: serverConfig.port,
-                protocol: serverConfig.protocol,
-                username: serverConfig.username
-            };
-            console.log(`[HTTP] Task ${taskId}: 上传参数:`, uploadParams);
-
-            // 由于浏览器安全限制，我们无法直接读取下载的文件
-            // 这里我们模拟HTTP上传过程，但记录真实的上传参数
-            console.warn(`[HTTP] Task ${taskId}: 由于浏览器安全限制，无法直接访问下载文件`);
-            console.log(`[HTTP] Task ${taskId}: 开始模拟 HTTP 上传过程`);
-
-            // 模拟HTTP上传进度
-            await this.simulateHttpUpload(taskId, uploadUrl);
-            
-            console.log(`[HTTP] Task ${taskId}: HTTP 上传流程完成`);
-            
-        } catch (error) {
-            console.error(`[HTTP] Task ${taskId}: HTTP 上传失败:`, error);
-            console.error(`[HTTP] Task ${taskId}: 错误详情:`, {
-                message: error.message,
-                stack: error.stack,
-                serverConfig: serverConfig.name
-            });
-            throw error;
-        }
-    }
-
-    // 构建上传URL
-    buildUploadUrl(serverConfig, targetPath) {
-        const protocol = serverConfig.protocol || 'http';
-        const host = serverConfig.host;
-        const port = serverConfig.port || (protocol === 'https' ? 443 : 80);
-        const path = targetPath || serverConfig.defaultPath || '/upload';
-        
-        // 确保路径以/开头
-        const normalizedPath = path.startsWith('/') ? path : '/' + path;
-        
-        let url;
-        if (port === 80 && protocol === 'http' || port === 443 && protocol === 'https') {
-            url = `${protocol}://${host}${normalizedPath}`;
-        } else {
-            url = `${protocol}://${host}:${port}${normalizedPath}`;
-        }
-        
-        console.log(`[URL] 构建上传URL: ${protocol}://${host}:${port} + ${normalizedPath} = ${url}`);
-        return url;
-    }
-
-    // 模拟HTTP上传进度
-    async simulateHttpUpload(taskId, uploadUrl) {
-        const task = this.activeTasks.get(taskId);
-        const totalSize = task.totalBytes || 1000000;
-        
-        console.log(`[HTTP-SIM] Task ${taskId}: 开始模拟 HTTP 上传`);
-        console.log(`[HTTP-SIM] Task ${taskId}: 文件大小: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
-        console.log(`[HTTP-SIM] Task ${taskId}: 上传URL: ${uploadUrl}`);
-        
-        // 模拟建立连接
-        console.log(`[HTTP-SIM] Task ${taskId}: 建立 HTTP 连接...`);
-        await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
-        console.log(`[HTTP-SIM] Task ${taskId}: HTTP 连接建立成功`);
-        
-        // 模拟发送请求头
-        console.log(`[HTTP-SIM] Task ${taskId}: 发送 HTTP 请求头...`);
-        console.log(`[HTTP-SIM] Task ${taskId}: Content-Type: multipart/form-data`);
-        console.log(`[HTTP-SIM] Task ${taskId}: Content-Length: ${totalSize}`);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // 模拟网络延迟和上传进度
-        console.log(`[HTTP-SIM] Task ${taskId}: 开始上传数据...`);
-        
-        for (let i = 0; i <= 100; i += 2) {
-            // 模拟网络波动
-            const delay = Math.random() * 100 + 50; // 50-150ms随机延迟
-            await new Promise(resolve => setTimeout(resolve, delay));
-            
-            task.transferredBytes = Math.floor(totalSize * i / 100);
-            const transferredMB = (task.transferredBytes / 1024 / 1024).toFixed(2);
-            const totalMB = (totalSize / 1024 / 1024).toFixed(2);
-            const speed = (task.transferredBytes / 1024 / ((Date.now() - (task.transferStartTime || Date.now())) / 1000)).toFixed(1);
-            
-            // 每10%记录一次进度
-            if (i % 10 === 0) {
-                console.log(`[HTTP-SIM] Task ${taskId}: 上传进度 ${i}% (${transferredMB}/${totalMB} MB) 速度: ${speed} KB/s`);
-            }
-            
-            this.notifyTaskUpdate(taskId, task);
-            
-            // 模拟偶发的网络问题
-            if (Math.random() < 0.02) { // 2%概率模拟网络延迟
-                console.warn(`[HTTP-SIM] Task ${taskId}: 网络延迟模拟 (500ms)`);
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-        }
-        
-        // 模拟服务器处理时间
-        console.log(`[HTTP-SIM] Task ${taskId}: 等待服务器处理响应...`);
-        await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
-        
-        // 模拟服务器响应
-        console.log(`[HTTP-SIM] Task ${taskId}: 收到服务器响应:`);
-        console.log(`[HTTP-SIM] Task ${taskId}: HTTP 200 OK`);
-        console.log(`[HTTP-SIM] Task ${taskId}: 响应头: Content-Type: application/json`);
-        console.log(`[HTTP-SIM] Task ${taskId}: 响应体: {"status":"success","message":"文件上传成功"}`);
-        
-        console.log(`[HTTP-SIM] Task ${taskId}: HTTP 上传模拟完成`);
-    }
-
-    // 模拟SFTP/FTP传输
-    async simulateFileTransfer(taskId, serverConfig) {
-        const task = this.activeTasks.get(taskId);
-        const totalSize = task.totalBytes || 1000000;
-        const protocol = serverConfig.protocol.toUpperCase();
-        
-        console.log(`[${protocol}-SIM] Task ${taskId}: 开始模拟 ${protocol} 传输`);
-        console.log(`[${protocol}-SIM] Task ${taskId}: 连接参数:`, {
-            host: serverConfig.host,
-            port: serverConfig.port || (serverConfig.protocol === 'sftp' ? 22 : 21),
-            username: serverConfig.username || 'anonymous',
-            targetPath: task.targetPath || serverConfig.defaultPath,
-            fileName: task.fileName
-        });
-        
-        // 模拟连接建立
-        console.log(`[${protocol}-SIM] Task ${taskId}: 正在建立 ${protocol} 连接...`);
-        console.log(`[${protocol}-SIM] Task ${taskId}: 连接到 ${serverConfig.host}:${serverConfig.port || (serverConfig.protocol === 'sftp' ? 22 : 21)}`);
-        
-        // 模拟连接时间（SFTP通常比FTP慢一些）
-        const connectionTime = serverConfig.protocol === 'sftp' ? 1500 : 800;
-        await new Promise(resolve => setTimeout(resolve, connectionTime));
-        
-        console.log(`[${protocol}-SIM] Task ${taskId}: ${protocol} 连接建立成功`);
-        
-        // 模拟认证过程
-        console.log(`[${protocol}-SIM] Task ${taskId}: 开始用户认证...`);
-        console.log(`[${protocol}-SIM] Task ${taskId}: 用户名: ${serverConfig.username}`);
-        await new Promise(resolve => setTimeout(resolve, 300));
-        console.log(`[${protocol}-SIM] Task ${taskId}: 用户认证成功`);
-        
-        // 模拟切换到目标目录
-        const targetDir = task.targetPath || serverConfig.defaultPath || '/home/uploads/';
-        console.log(`[${protocol}-SIM] Task ${taskId}: 切换到目标目录: ${targetDir}`);
-        await new Promise(resolve => setTimeout(resolve, 200));
-        console.log(`[${protocol}-SIM] Task ${taskId}: 目录切换成功`);
-        
-        // 模拟开始文件传输
-        console.log(`[${protocol}-SIM] Task ${taskId}: 开始文件传输...`);
-        console.log(`[${protocol}-SIM] Task ${taskId}: 传输模式: ${serverConfig.protocol === 'ftp' ? 'Binary' : 'SFTP'}`);
-        console.log(`[${protocol}-SIM] Task ${taskId}: 文件大小: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
-        
-        task.transferStartTime = Date.now();
-        
-        // 模拟文件传输进度
-        for (let i = 0; i <= 100; i += 3) {
-            // SFTP传输通常比HTTP稍慢
-            const delay = serverConfig.protocol === 'sftp' ? 100 : 80;
-            await new Promise(resolve => setTimeout(resolve, delay));
-            
-            task.transferredBytes = Math.floor(totalSize * i / 100);
-            const transferredMB = (task.transferredBytes / 1024 / 1024).toFixed(2);
-            const totalMB = (totalSize / 1024 / 1024).toFixed(2);
-            const elapsedSeconds = (Date.now() - task.transferStartTime) / 1000;
-            const speed = elapsedSeconds > 0 ? (task.transferredBytes / 1024 / elapsedSeconds).toFixed(1) : '0';
-            
-            if (i % 15 === 0) {
-                console.log(`[${protocol}-SIM] Task ${taskId}: 传输进度 ${i}% (${transferredMB}/${totalMB} MB) 速度: ${speed} KB/s`);
-            }
-            
-            this.notifyTaskUpdate(taskId, task);
-            
-            // 模拟网络波动
-            if (Math.random() < 0.03) {
-                console.warn(`[${protocol}-SIM] Task ${taskId}: 网络波动，暂停 200ms`);
-                await new Promise(resolve => setTimeout(resolve, 200));
-            }
-        }
-        
-        // 模拟传输完成后的验证
-        console.log(`[${protocol}-SIM] Task ${taskId}: 文件传输完成，正在验证...`);
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // 模拟文件大小验证
-        console.log(`[${protocol}-SIM] Task ${taskId}: 验证文件大小: ${totalSize} bytes`);
-        console.log(`[${protocol}-SIM] Task ${taskId}: 文件完整性检查通过`);
-        
-        // 模拟设置文件权限（仅SFTP）
-        if (serverConfig.protocol === 'sftp') {
-            console.log(`[${protocol}-SIM] Task ${taskId}: 设置文件权限: 644`);
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        
-        // 模拟关闭连接
-        console.log(`[${protocol}-SIM] Task ${taskId}: 关闭 ${protocol} 连接`);
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        console.log(`[${protocol}-SIM] Task ${taskId}: ${protocol} 传输完成`);
-        console.log(`[${protocol}-SIM] Task ${taskId}: 文件已成功上传到: ${targetDir}${task.fileName}`);
     }
 
     // 取消任务
@@ -1281,7 +974,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             handleStartTransferForTask(message.data, sendResponse);
             break;
         case 'startDownload':
-            handleStartDownload(message.data, sendResponse);
+            handleStartDownload(message, sendResponse);
             break;
         case 'getActiveTasks':
             handleGetActiveTasks(sendResponse);
@@ -1568,6 +1261,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // 处理开始下载
 async function handleStartDownload(data, sendResponse) {
+    console.log('[DEBUG] handleStartDownload received:', data);
     try {
         const result = await downloadManager.startDownloadTask(
             data.url,
@@ -1577,7 +1271,7 @@ async function handleStartDownload(data, sendResponse) {
         );
         sendResponse(result);
     } catch (error) {
-        console.error('Failed to start download:', error);
+        console.error('[DEBUG] Failed to start download:', error);
         sendResponse({ success: false, error: error.message });
     }
 }

@@ -152,7 +152,7 @@
             <div class="row">
                 <div class="col-md-4">
                     <h6>压缩文件</h6>
-                    <a href="https://example.com/test.zip" class="download-link">test.zip</a>
+                    <a href="http://localhost:5000/static/test.zip" class="download-link">test.zip</a>
                     <a href="https://example.com/archive.rar" class="download-link">archive.rar</a>
                     <a href="https://example.com/data.7z" class="download-link">data.7z</a>
                 </div>
@@ -235,9 +235,8 @@
 
     <script type="module">
         // 导入API客户端
-        import { apiClient } from '/static/api-client.js';
-        
-        // 全局变量
+        import ApiClient from '/static/api-client.js';
+        const apiClient = new ApiClient();
         window.apiClient = apiClient;
         window.testResults = [];
         

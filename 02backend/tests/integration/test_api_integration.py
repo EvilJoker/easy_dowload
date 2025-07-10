@@ -5,6 +5,8 @@ API集成测试脚本
 """
 import os
 import sys
+import tempfile
+from unittest.mock import patch
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
@@ -100,8 +102,28 @@ def test_api_integration():
     assert "queue" in stats
     print("✓ Retrieved statistics")
 
-    # 测试7: 清理测试数据
-    print("Test 7: Cleanup Test Data")
+    # 测试7: /upload 接口集成测试
+    print("Test 7: Upload API")
+    with tempfile.NamedTemporaryFile(delete=False, mode="w+t") as tmpfile:
+        tmpfile.write("test upload content\n")
+        tmpfile_path = tmpfile.name
+    upload_data = {
+        "local_path": tmpfile_path,
+        "server_id": server_id,
+        "target_path": "/home/testuser",
+    }
+    with patch(
+        "src.infrastructure.network.sftp_client.SFTPClient.upload", return_value=True
+    ):
+        response = client.post("/upload", data=upload_data)
+        assert response.status_code == 200
+        result = response.get_json()
+        assert result.get("success") is True
+        print("✓ Upload API passed")
+    os.unlink(tmpfile_path)
+
+    # 测试8: 清理测试数据
+    print("Test 8: Cleanup Test Data")
     response = client.delete(f"/servers/{server_id}")
     assert response.status_code == 200
     print("✓ Deleted test server config")

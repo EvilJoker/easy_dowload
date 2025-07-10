@@ -1,23 +1,22 @@
 import datetime
-import threading
-from typing import Union
 import os
+from typing import Any, Union
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from ...application.handlers.error_handler import ErrorHandler
-from ...application.services.config_manager import ConfigManager
-from ...application.services.history_manager import HistoryManager
-from ...application.services.queue_manager import QueueManager, TaskStatus
-from ...infrastructure.network.file_downloader import FileDownloader
-from ...infrastructure.network.sftp_client import SFTPClient
+from src.application.handlers.error_handler import ErrorHandler
+from src.application.services.config_manager import ConfigManager
+from src.application.services.history_manager import HistoryManager
+from src.application.services.queue_manager import QueueManager
+from src.infrastructure.network.sftp_client import SFTPClient
 
 
 def create_app() -> Flask:
     """创建Flask应用，注册所有RESTful接口"""
-    static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'static'))
+    static_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "static")
+    )
     app = Flask(__name__, static_folder=static_dir)
-    downloader = FileDownloader()
 
     # 阶段2核心模块初始化
     config_manager = ConfigManager()
@@ -36,115 +35,34 @@ def create_app() -> Flask:
             }
         )
 
-    @app.route("/transfer", methods=["POST"])
-    def transfer() -> Union[Response, tuple[Response, int]]:
-        """发起文件传输请求 - 阶段2增强"""
-        try:
-            data = request.get_json()
-            file_url = data.get("file_url")
-            server_id = data.get("server_id")
-            target_path = data.get("target_path", "/")
+    @app.route("/upload", methods=["POST"])
+    def upload() -> Any:
+        import os
 
-            if not file_url or not server_id or not isinstance(server_id, str):
-                return jsonify({"error": "缺少必要参数"}), 400
+        local_path = request.form.get("local_path")
+        server_id = request.form.get("server_id")
+        target_path = request.form.get("target_path", "/")
+        if not local_path or not server_id:
+            return jsonify({"error": "缺少参数"}), 400
 
-            # 确保server_id是str类型
-            server_id_str: str = str(server_id)
+        # 展开 ~
+        local_path = os.path.expanduser(local_path)
 
-            # 使用配置管理器获取服务器配置
-            server_config = config_manager.get_server_config(server_id_str)
-            if not server_config:
-                return jsonify({"error": "服务器配置不存在"}), 404
+        # 查找服务器配置
+        server_config = config_manager.get_server_config(server_id)
+        if not server_config:
+            return jsonify({"error": "服务器配置不存在"}), 404
 
-            # 下载文件
-            file_path, file_size = downloader.download(file_url)
-
-            # 创建传输任务
-            task_data = {
-                "file_path": file_path,
-                "file_name": file_path.split("/")[-1],
-                "file_size": file_size,
-                "server_id": server_id_str,
-                "target_path": target_path,
-            }
-
-            queue_result = queue_manager.add_task(task_data)
-            if not queue_result["success"]:
-                return jsonify({"error": "队列已满"}), 503
-
-            task_id_raw = queue_result.get("task_id")
-            if not isinstance(task_id_raw, str):
-                return jsonify({"error": "任务创建失败"}), 500
-
-            task_id: str = task_id_raw
-
-            # 异步执行传输（简化实现）
-            def transfer_file() -> None:
-                try:
-                    sftp_client = SFTPClient(server_config)
-
-                    def progress_callback(progress: float) -> None:
-                        queue_manager.update_task_progress(task_id, float(progress))
-
-                    success = sftp_client.upload(
-                        file_path, target_path, progress_callback
-                    )
-
-                    if success:
-                        queue_manager.update_task_status(
-                            task_id, TaskStatus.COMPLETED
-                        )
-
-                        # 记录到历史
-                        history_manager.add_history_record(
-                            {
-                                "task_id": task_id,
-                                "file_name": task_data["file_name"],
-                                "server_name": server_config.name,
-                                "status": "completed",
-                                "file_size": file_size,
-                                "duration": 0,  # 简化实现
-                            }
-                        )
-                    else:
-                        queue_manager.update_task_status(
-                            task_id, TaskStatus.FAILED, "传输失败"
-                        )
-
-                        # 记录错误
-                        error_handler.handle_error(
-                            Exception("传输失败"),
-                            {"task_id": task_id, "server_id": server_id_str},
-                        )
-
-                    # 清理临时文件
-                    downloader.cleanup(file_path)
-
-                except Exception as e:
-                    queue_manager.update_task_status(
-                        task_id, TaskStatus.FAILED, str(e)
-                    )
-
-                    # 记录错误
-                    error_handler.handle_error(
-                        e, {"task_id": task_id, "server_id": server_id_str}
-                    )
-
-                    downloader.cleanup(file_path)
-
-            # 启动传输（简化实现，实际应使用线程池）
-            thread = threading.Thread(target=transfer_file)
-            thread.start()
-
-            return jsonify({"task_id": task_id, "status": "started"})
-
-        except Exception as e:
-            # 记录错误
-            error_handler.handle_error(e, {"operation": "transfer", "data": data})
-            return jsonify({"error": str(e)}), 500
+        sftp_client = SFTPClient(server_config)
+        file_name = os.path.basename(local_path)
+        remote_path = os.path.join(target_path, file_name)
+        success = sftp_client.upload(local_path, remote_path)
+        if not success:
+            return jsonify({"error": "SFTP上传失败"}), 500
+        return jsonify({"success": True})
 
     @app.route("/progress/<task_id>", methods=["GET"])
-    def progress(task_id: str) -> Union[Response, tuple[Response, int]]:
+    def progress(task_id: str) -> Any:
         """查询传输进度 - 阶段2增强"""
         task = queue_manager.get_task(task_id)
         if not task:
@@ -166,7 +84,7 @@ def create_app() -> Flask:
 
     # 阶段2新增的配置管理API
     @app.route("/servers", methods=["GET"])
-    def list_servers() -> Union[Response, tuple[Response, int]]:
+    def list_servers() -> Any:
         """列出所有服务器配置"""
         configs = config_manager.list_server_configs()
         # 转换为dict格式返回
@@ -188,7 +106,7 @@ def create_app() -> Flask:
         return jsonify(servers)
 
     @app.route("/servers", methods=["POST"])
-    def create_server() -> Union[Response, tuple[Response, int]]:
+    def create_server() -> Any:
         """创建服务器配置"""
         data = request.get_json()
         result = config_manager.create_server_config(data)
@@ -229,7 +147,7 @@ def create_app() -> Flask:
             return jsonify({"error": error_detail}), 400
 
     @app.route("/servers/<server_id>", methods=["GET"])
-    def get_server(server_id: str) -> Union[Response, tuple[Response, int]]:
+    def get_server(server_id: str) -> Any:
         """获取服务器配置"""
         config = config_manager.get_server_config(server_id)
         if config:
@@ -250,7 +168,7 @@ def create_app() -> Flask:
             return jsonify({"error": "服务器配置不存在"}), 404
 
     @app.route("/servers/<server_id>", methods=["PUT"])
-    def update_server(server_id: str) -> Union[Response, tuple[Response, int]]:
+    def update_server(server_id: str) -> Any:
         """更新服务器配置"""
         data = request.get_json()
         result = config_manager.update_server_config(server_id, data)
@@ -260,7 +178,7 @@ def create_app() -> Flask:
             return jsonify({"error": result["error"]}), 400
 
     @app.route("/servers/<server_id>", methods=["DELETE"])
-    def delete_server(server_id: str) -> Union[Response, tuple[Response, int]]:
+    def delete_server(server_id: str) -> Any:
         """删除服务器配置"""
         result = config_manager.delete_server_config(server_id)
         if result["success"]:
@@ -269,7 +187,7 @@ def create_app() -> Flask:
             return jsonify({"error": result["error"]}), 404
 
     @app.route("/history", methods=["GET"])
-    def list_history() -> Union[Response, tuple[Response, int]]:
+    def list_history() -> Any:
         """列出传输历史"""
         records = history_manager.list_history_records()
         # 转换为dict格式返回
@@ -290,7 +208,7 @@ def create_app() -> Flask:
         return jsonify(history)
 
     @app.route("/history/<record_id>", methods=["GET"])
-    def get_history_record(record_id: str) -> Union[Response, tuple[Response, int]]:
+    def get_history_record(record_id: str) -> Any:
         """获取传输历史记录"""
         record = history_manager.get_history_record(record_id)
         if record:
@@ -310,7 +228,7 @@ def create_app() -> Flask:
             return jsonify({"error": "历史记录不存在"}), 404
 
     @app.route("/history/<record_id>", methods=["DELETE"])
-    def delete_history_record(record_id: str) -> Union[Response, tuple[Response, int]]:
+    def delete_history_record(record_id: str) -> Any:
         """删除传输历史记录"""
         result = history_manager.delete_history_record(record_id)
         if result["success"]:
@@ -319,7 +237,7 @@ def create_app() -> Flask:
             return jsonify({"error": result["error"]}), 404
 
     @app.route("/history/clear", methods=["POST"])
-    def clear_history() -> Union[Response, tuple[Response, int]]:
+    def clear_history() -> Any:
         """清空传输历史"""
         result = history_manager.clear_history_records(7)  # 清理7天前的记录
         if result["success"]:
@@ -328,7 +246,7 @@ def create_app() -> Flask:
             return jsonify({"error": result["error"]}), 500
 
     @app.route("/tasks", methods=["GET"])
-    def list_tasks() -> Union[Response, tuple[Response, int]]:
+    def list_tasks() -> Any:
         """列出所有任务"""
         tasks = queue_manager.list_tasks()
         # 转换为dict格式返回
@@ -351,7 +269,7 @@ def create_app() -> Flask:
         return jsonify(task_list)
 
     @app.route("/tasks/<task_id>", methods=["GET"])
-    def get_task(task_id: str) -> Union[Response, tuple[Response, int]]:
+    def get_task(task_id: str) -> Any:
         """获取任务详情"""
         task = queue_manager.get_task(task_id)
         if task:
@@ -373,7 +291,7 @@ def create_app() -> Flask:
             return jsonify({"error": "任务不存在"}), 404
 
     @app.route("/tasks/<task_id>/cancel", methods=["POST"])
-    def cancel_task(task_id: str) -> Union[Response, tuple[Response, int]]:
+    def cancel_task(task_id: str) -> Any:
         """取消任务"""
         result = queue_manager.cancel_task(task_id)
         if result["success"]:
@@ -382,19 +300,19 @@ def create_app() -> Flask:
             return jsonify({"error": result["error"]}), 404
 
     @app.route("/queue/status", methods=["GET"])
-    def get_queue_status() -> Union[Response, tuple[Response, int]]:
+    def get_queue_status() -> Any:
         """获取队列状态"""
         status = queue_manager.get_queue_status()
         return jsonify(status)
 
     @app.route("/errors", methods=["GET"])
-    def list_errors() -> Union[Response, tuple[Response, int]]:
+    def list_errors() -> Any:
         """列出错误记录"""
         errors = error_handler.get_error_statistics()
         return jsonify(errors)
 
     @app.route("/errors/clear", methods=["POST"])
-    def clear_errors() -> Union[Response, tuple[Response, int]]:
+    def clear_errors() -> Any:
         """清空错误记录"""
         result = error_handler.clear_error_logs(7)  # 清理7天前的错误
         if result["success"]:
@@ -404,7 +322,7 @@ def create_app() -> Flask:
 
     # 阶段2新增的统计信息API
     @app.route("/statistics", methods=["GET"])
-    def get_statistics() -> Union[Response, tuple[Response, int]]:
+    def get_statistics() -> Any:
         """获取统计信息"""
         # 获取各模块统计信息
         error_stats = error_handler.get_error_statistics()
@@ -420,10 +338,12 @@ def create_app() -> Flask:
             }
         )
 
-    @app.route('/demo', methods=['GET'])
-    def serve_demo_html():
+    @app.route("/demo", methods=["GET"])
+    def serve_demo_html() -> Any:
         """提供 demo.html 静态页面（绝对路径，指向 02backend/static/）"""
-        static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'static'))
-        return send_from_directory(static_dir, 'demo.html')
+        static_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "static")
+        )
+        return send_from_directory(static_dir, "demo.html")
 
     return app
