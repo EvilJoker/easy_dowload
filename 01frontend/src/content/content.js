@@ -1,4 +1,6 @@
 // Easy Translate Content Script - 页面级控制版本
+import { apiClient } from '../shared/api-client.js';
+
 class EasyTranslateContent {
     constructor() {
         this.config = {
@@ -595,34 +597,13 @@ class EasyTranslateContent {
 
     async loadServers(dialog) {
         try {
-            const result = await chrome.storage.local.get(['servers']);
-            let servers = result.servers || [];
-            
-            // 如果没有服务器，添加一个默认的localhost服务器
-            if (servers.length === 0) {
-                const defaultServer = {
-                    id: 'default_localhost',
-                    name: 'localhost (默认)',
-                    host: 'localhost',
-                    port: 22,
-                    protocol: 'sftp',
-                    username: 'admin',
-                    password: '',
-                    defaultPath: '/home/uploads/',
-                    createdAt: new Date().toISOString(),
-                    lastUsed: new Date().toISOString(),
-                    isDefault: true
-                };
-                
-                servers = [defaultServer];
-                await chrome.storage.local.set({ servers });
-                console.log('Easy Translate: Created default localhost server');
-            }
-            
+            // 通过后端API获取服务器列表
+            const servers = await apiClient.getServers();
             this.populateServerList(dialog, servers);
         } catch (error) {
             console.error('Failed to load servers:', error);
             this.populateServerList(dialog, []);
+            this.showAlert('服务器列表加载失败: ' + error.message, 'error');
         }
     }
 
@@ -659,20 +640,15 @@ class EasyTranslateContent {
     async editSelectedServer(dialog) {
         const select = dialog.querySelector('.server-select');
         const selectedOption = select.options[select.selectedIndex];
-        
-        if (!selectedOption || !selectedOption.dataset.serverIndex) {
+        if (!selectedOption || !selectedOption.value) {
             this.showAlert('请先选择要编辑的服务器', 'warning');
             return;
         }
-        
         try {
-            const result = await chrome.storage.local.get(['servers']);
-            const servers = result.servers || [];
-            const serverIndex = parseInt(selectedOption.dataset.serverIndex);
-            const serverData = servers[serverIndex];
-            
+            const serverId = selectedOption.value;
+            const serverData = await apiClient.getServer(serverId);
             if (serverData) {
-                this.showAddServerDialog(dialog, serverData);
+                this.showAddServerDialog(dialog, apiClient.convertBackendToFrontend(serverData));
             } else {
                 this.showAlert('未找到选中的服务器', 'error');
             }
@@ -685,43 +661,21 @@ class EasyTranslateContent {
     async startTransfer(dialog, url) {
         const select = dialog.querySelector('.server-select');
         const pathInput = dialog.querySelector('.target-path');
-        
         if (!select.value) {
             this.showAlert('请选择服务器', 'warning');
             return;
         }
-        
         try {
-            // 提取文件名
-            const fileName = this.extractFileName(url);
-            
-            // 使用新的下载管理API - 修复服务器ID传递错误
-            const response = await chrome.runtime.sendMessage({
-                action: 'startDownload',
-                data: {
-                    url: url,
-                    fileName: fileName,
-                    serverId: select.value,  // 修复：使用服务器ID而不是索引
-                    targetPath: pathInput.value || '/home/uploads/'
-                }
+            // 直接调用后端API发起传输
+            const result = await apiClient.startTransfer({
+                file_url: url,
+                server_id: select.value,
+                target_path: pathInput.value || '/home/uploads/'
             });
-            
-            if (response.success) {
-                this.showDetailedAlert(`下载任务已启动: ${fileName}`, 'success', '任务开始');
-                dialog.remove();
-                
-                // 开始监听这个任务的状态变化
-                this.startTaskStatusMonitoring(response.taskId, fileName);
-                
-                // 显示提示信息，用户可以在浏览器下载页面查看进度
-                setTimeout(() => {
-                    this.showAlert('可在浏览器下载页面查看下载进度，完成后将自动开始上传', 'info');
-                }, 1500);
-            } else {
-                this.showDetailedAlert('启动下载失败: ' + response.error, 'error', '下载失败');
-            }
+            this.showDetailedAlert('传输任务已启动', 'success', '任务开始');
+            dialog.remove();
         } catch (error) {
-            this.showDetailedAlert('启动下载失败: ' + error.message, 'error', '下载失败');
+            this.showDetailedAlert('启动传输失败: ' + error.message, 'error', '传输失败');
         }
     }
 
@@ -909,9 +863,9 @@ class EasyTranslateContent {
                         <div style="flex: 1;">
                             <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">协议</label>
                             <select name="protocol" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                <option value="sftp" ${(serverData?.protocol || 'sftp') === 'sftp' ? 'selected' : ''}>SFTP</option>
-                                <option value="ftp" ${serverData?.protocol === 'ftp' ? 'selected' : ''}>FTP</option>
-                                <option value="scp" ${serverData?.protocol === 'scp' ? 'selected' : ''}>SCP</option>
+                                <option value="SFTP" ${(serverData?.protocol?.toUpperCase() || 'SFTP') === 'SFTP' ? 'selected' : ''}>SFTP</option>
+                                <option value="FTP" ${(serverData?.protocol?.toUpperCase() || '') === 'FTP' ? 'selected' : ''}>FTP</option>
+                                <option value="SCP" ${(serverData?.protocol?.toUpperCase() || '') === 'SCP' ? 'selected' : ''}>SCP</option>
                             </select>
                         </div>
                     </div>
@@ -982,7 +936,7 @@ class EasyTranslateContent {
                     name: formData.get('name'),
                     host: formData.get('host'),
                     port: parseInt(formData.get('port')) || 22,
-                    protocol: formData.get('protocol'),
+                    protocol: (formData.get('protocol') || 'SFTP').toUpperCase(),
                     username: formData.get('username'),
                     password: formData.get('password'),
                     defaultPath: formData.get('defaultPath') || '/home/uploads/'
@@ -1046,32 +1000,27 @@ class EasyTranslateContent {
             name: formData.get('name'),
             host: formData.get('host'),
             port: parseInt(formData.get('port')) || 22,
-            protocol: formData.get('protocol'),
+            protocol: (formData.get('protocol') || 'SFTP').toUpperCase(),
             username: formData.get('username'),
             password: formData.get('password'),
             defaultPath: formData.get('defaultPath') || '/home/uploads/'
         };
         
         try {
-            // 通过background script保存服务器，确保持久化
-            const response = await chrome.runtime.sendMessage({
-                action: 'saveServer',
-                data: serverData
-            });
-            
-            if (!response.success) {
-                throw new Error(response.error || '保存失败');
+            let result;
+            if (isEdit && serverData.id) {
+                // 编辑服务器，调用 updateServer
+                result = await apiClient.updateServer(serverData.id, apiClient.convertFrontendToBackend(serverData));
+            } else {
+                // 新增服务器，调用 createServer
+                result = await apiClient.createServer(apiClient.convertFrontendToBackend(serverData));
             }
-            
             addServerDialog.remove();
-            
             if (parentDialog) {
                 // 重新加载服务器列表
                 await this.loadServers(parentDialog);
             }
-            
             this.showAlert(isEdit ? '服务器更新成功' : '服务器添加成功', 'success');
-            
         } catch (error) {
             console.error('Failed to save server:', error);
             this.showAlert('保存失败: ' + error.message, 'error');
@@ -1082,24 +1031,15 @@ class EasyTranslateContent {
         const form = addServerDialog.querySelector('.server-form');
         const serverId = form.querySelector('input[name="serverId"]').value;
         const serverName = form.querySelector('input[name="name"]').value;
-        
         if (!confirm(`确定要删除服务器 "${serverName}" 吗？`)) {
             return;
         }
-        
         try {
-            const result = await chrome.storage.local.get(['servers']);
-            let servers = result.servers || [];
-            
-            servers = servers.filter(s => s.id !== serverId);
-            await chrome.storage.local.set({ servers });
-            
+            await apiClient.deleteServer(serverId);
             addServerDialog.remove();
-            
             if (parentDialog) {
-                this.populateServerList(parentDialog, servers);
+                await this.loadServers(parentDialog);
             }
-            
             this.showAlert('服务器删除成功', 'success');
         } catch (error) {
             console.error('Failed to delete server:', error);
@@ -1247,18 +1187,12 @@ class EasyTranslateContent {
 
     async showEditServerDialog(serverId) {
         try {
-            // 从存储中获取服务器数据
-            const result = await chrome.storage.local.get(['servers']);
-            const servers = result.servers || [];
-            const serverData = servers.find(s => s.id === serverId);
-            
+            const serverData = await apiClient.getServer(serverId);
             if (!serverData) {
                 this.showAlert('未找到指定的服务器', 'error');
                 return;
             }
-            
-            // 显示编辑服务器对话框
-            this.showAddServerDialog(null, serverData);
+            this.showAddServerDialog(null, apiClient.convertBackendToFrontend(serverData));
         } catch (error) {
             console.error('Failed to load server for editing:', error);
             this.showAlert('加载服务器数据失败: ' + error.message, 'error');

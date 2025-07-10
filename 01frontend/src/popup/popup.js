@@ -1,5 +1,8 @@
 // popup.js - Easy Translate插件的popup页面脚本 - 带任务管理版本
 
+// 导入API客户端
+import { apiClient } from '../shared/api-client.js';
+
 class PopupController {
     constructor() {
         this.toggle = null;
@@ -162,16 +165,20 @@ class PopupController {
         }
     }
 
-    // 加载服务器列表
+    // 加载服务器列表 - 使用API
     async loadServers() {
         try {
-            const result = await chrome.storage.local.get(['servers']);
-            const servers = result.servers || [];
-            this.renderServerList(servers);
-            console.log('Loaded servers:', servers.length);
+            console.log('[API] Loading servers...');
+            const servers = await apiClient.getServers();
+            // 转换后端格式到前端格式
+            const frontendServers = servers.map(server => apiClient.convertBackendToFrontend(server));
+            this.renderServerList(frontendServers);
+            console.log('[API] Loaded servers:', frontendServers.length);
         } catch (error) {
-            console.error('Failed to load servers:', error);
+            console.error('[API] Failed to load servers:', error);
             this.renderServerList([]);
+            // 显示错误提示
+            this.showStatusNotification('服务器加载失败，请检查后端连接', 'error');
         }
     }
 
@@ -242,39 +249,78 @@ class PopupController {
         }
     }
 
-    // 删除服务器
+    // 删除服务器 - 使用API
     async deleteServer(serverId) {
         try {
-            const result = await chrome.storage.local.get(['servers']);
-            const servers = result.servers || [];
-            const server = servers.find(s => s.id === serverId);
+            // 先获取服务器信息用于确认
+            const server = await apiClient.getServer(serverId);
+            const frontendServer = apiClient.convertBackendToFrontend(server);
             
-            if (!server) {
-                alert('服务器不存在');
+            if (!confirm(`确定要删除服务器 "${frontendServer.name}" 吗？`)) {
                 return;
             }
             
-            if (!confirm(`确定要删除服务器 "${server.name}" 吗？`)) {
-                return;
-            }
-            
-            // 通过background script删除服务器，确保持久化
-            const response = await chrome.runtime.sendMessage({
-                action: 'deleteServer',
-                data: { serverId: serverId }
-            });
-            
-            if (!response.success) {
-                throw new Error(response.error || '删除失败');
-            }
+            // 通过API删除服务器
+            await apiClient.deleteServer(serverId);
             
             // 重新加载服务器列表
             await this.loadServers();
             
-            console.log('Server deleted:', serverId);
+            console.log('[API] Server deleted:', serverId);
+            this.showStatusNotification('服务器删除成功', 'success');
         } catch (error) {
-            console.error('Failed to delete server:', error);
-            alert('删除失败: ' + error.message);
+            console.error('[API] Failed to delete server:', error);
+            this.showStatusNotification('删除失败: ' + error.message, 'error');
+        }
+    }
+
+    // 创建服务器 - 使用API
+    async createServer(serverData) {
+        try {
+            console.log('[API] Creating server:', serverData);
+            
+            // 转换前端格式到后端格式
+            const backendData = apiClient.convertFrontendToBackend(serverData);
+            
+            // 通过API创建服务器
+            const result = await apiClient.createServer(backendData);
+            
+            // 重新加载服务器列表
+            await this.loadServers();
+            
+            console.log('[API] Server created:', result);
+            this.showStatusNotification('服务器创建成功', 'success');
+            
+            return result;
+        } catch (error) {
+            console.error('[API] Failed to create server:', error);
+            this.showStatusNotification('创建失败: ' + error.message, 'error');
+            throw error;
+        }
+    }
+
+    // 更新服务器 - 使用API
+    async updateServer(serverId, serverData) {
+        try {
+            console.log('[API] Updating server:', serverId, serverData);
+            
+            // 转换前端格式到后端格式
+            const backendData = apiClient.convertFrontendToBackend(serverData);
+            
+            // 通过API更新服务器
+            const result = await apiClient.updateServer(serverId, backendData);
+            
+            // 重新加载服务器列表
+            await this.loadServers();
+            
+            console.log('[API] Server updated:', result);
+            this.showStatusNotification('服务器更新成功', 'success');
+            
+            return result;
+        } catch (error) {
+            console.error('[API] Failed to update server:', error);
+            this.showStatusNotification('更新失败: ' + error.message, 'error');
+            throw error;
         }
     }
 
@@ -283,9 +329,9 @@ class PopupController {
         try {
             // 获取活动任务
             const activeResponse = await chrome.runtime.sendMessage({ action: 'getActiveTasks' });
-            let activeTasks = [];
+            let activeTasksData = [];
             if (activeResponse.success) {
-                activeTasks = activeResponse.tasks || [];
+                activeTasksData = activeResponse.tasks || [];
             }
 
             // 获取任务历史
@@ -303,7 +349,7 @@ class PopupController {
             });
 
             // 合并所有任务并按开始时间排序（最新的在上面）
-            const allTasks = [...activeTasks, ...historyTasks];
+            const allTasks = [...activeTasksData, ...historyTasks];
             allTasks.sort((a, b) => {
                 const timeA = new Date(a.startTime || a.createdAt || 0).getTime();
                 const timeB = new Date(b.startTime || b.createdAt || 0).getTime();
@@ -311,7 +357,7 @@ class PopupController {
             });
 
             // 更新内部状态
-            this.activeTasks = activeTasks;
+            this.activeTasks = activeTasksData;
             this.taskHistory = historyTasks.slice(0, 10); // 限制历史记录为10个
             await this.saveTaskHistory(); // 保存合并后的历史
 
