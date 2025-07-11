@@ -2,6 +2,9 @@
 
 // 导入API客户端
 import ApiClient from '../shared/api-client.js';
+// 导入共享的服务器对话框模块
+import ServerDialog from '../shared/server-dialog.js';
+
 const apiClient = new ApiClient();
 apiClient.setBaseUrl('http://localhost:5000');
 
@@ -18,8 +21,10 @@ class PopupController {
             '.deb', '.rpm', '.dmg', '.iso', '.pdf', '.doc', '.docx', 
             '.xls', '.xlsx', '.ppt', '.pptx', '.mp4', '.avi', '.mkv', 
             '.mp3', '.wav', '/download/', 'download?', 'attachment', 
-            'file?', 'releases/download/'
+            '.xls', '.xlsx', '.ppt', '.pptx', '.mp4', '.avi', '.mkv', 
         ];
+        // 初始化服务器对话框
+        this.serverDialog = new ServerDialog();
         this.init();
     }
 
@@ -234,20 +239,16 @@ class PopupController {
         return item;
     }
 
-    // 编辑服务器
+    // 通过 content script 唤起编辑服务器对话框
     async editServer(serverId) {
         try {
-            // 通知content script显示编辑服务器对话框
             await chrome.tabs.sendMessage(this.currentTab.id, {
                 action: 'showEditServerDialog',
                 serverId: serverId
             });
-            
-            // 关闭popup
             window.close();
         } catch (error) {
-            console.log('Could not send message to content script:', error.message);
-            alert('请在网页上使用此功能，或确保页面已加载Easy Translate扩展。');
+            this.showStatusNotification('请在网页上使用此功能，或确保页面已加载Easy Translate扩展。', 'error');
         }
     }
 
@@ -1197,20 +1198,15 @@ class PopupController {
         }
     }
 
-    // 调用网页版的添加服务器对话框
+    // 通过 content script 唤起添加服务器对话框
     async showAddServerDialog() {
         try {
-            // 通知content script显示添加服务器对话框
             await chrome.tabs.sendMessage(this.currentTab.id, {
                 action: 'showAddServerDialog'
             });
-            
-            // 关闭popup
             window.close();
         } catch (error) {
-            console.log('Could not send message to content script:', error.message);
-            // 如果content script不可用，显示提示
-            alert('请在网页上使用此功能，或确保页面已加载Easy Translate扩展。');
+            this.showStatusNotification('请在网页上使用此功能，或确保页面已加载Easy Translate扩展。', 'error');
         }
     }
 }

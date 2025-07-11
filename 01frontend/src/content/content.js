@@ -1,5 +1,8 @@
 // Easy Translate Content Script - 页面级控制版本
 import ApiClient from '../shared/api-client.js';
+// 导入共享的服务器对话框模块
+import ServerDialog from '../shared/server-dialog.js';
+
 const apiClient = new ApiClient();
 apiClient.setBaseUrl('http://localhost:5000');
 
@@ -28,6 +31,9 @@ class EasyTranslateContent {
         this.transferButtons = new WeakMap();
         this.isInitialized = false;
         this.monitoredTasks = new Map(); // 添加任务监控映射
+        
+        // 初始化服务器对话框
+        this.serverDialog = new ServerDialog();
         
         // 设置消息监听并检查初始状态
         this.init();
@@ -174,16 +180,16 @@ class EasyTranslateContent {
                 console.log(`Easy Translate: Show add server dialog for page ${this.pageKey}`);
                 
                 // 调用网页版的添加服务器对话框
-                this.showAddServerDialog();
+                this.serverDialog.showAddServerDialog();
                 
-                sendResponse({success: true});
+                sendResponse && sendResponse({success: true});
             } else if (request.action === 'showEditServerDialog') {
                 console.log(`Easy Translate: Show edit server dialog for page ${this.pageKey}`, request.serverId);
                 
                 // 调用网页版的编辑服务器对话框
-                await this.showEditServerDialog(request.serverId);
+                await this.serverDialog.showEditServerDialog(request.serverId);
                 
-                sendResponse({success: true});
+                sendResponse && sendResponse({success: true});
             } else if (request.action === 'showTransferDialog') {
                 console.log(`Easy Translate: Show transfer dialog for page ${this.pageKey}`, request.url);
                 
@@ -836,236 +842,23 @@ class EasyTranslateContent {
     }
 
     showAddServerDialog(parentDialog, serverData = null) {
-        const addServerDialog = document.createElement('div');
-        addServerDialog.className = 'easy-translate-add-server-dialog';
-        
-        Object.assign(addServerDialog.style, {
-            position: 'fixed',
-            top: '0',
-            left: '0',
-            right: '0',
-            bottom: '0',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: '1000000',
-            padding: '20px'
-        });
-
-        const isEdit = !!serverData;
-        const title = isEdit ? '编辑服务器' : '添加服务器';
-
-        addServerDialog.innerHTML = `
-            <div style="background: white; border-radius: 8px; padding: 24px; max-width: 450px; width: 90%; box-shadow: 0 4px 25px rgba(0,0,0,0.2);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h3 style="margin: 0; font-size: 18px; color: #333;">${title}</h3>
-                    <button class="close-btn" style="background: none; border: none; cursor: pointer; font-size: 20px; color: #666;">×</button>
-                </div>
-                
-                <form class="server-form">
-                    <input type="hidden" name="serverId" value="${serverData?.id || ''}">
-                    
-                    <div style="margin-bottom: 16px;">
-                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">服务器名称 *</label>
-                        <input type="text" name="name" value="${serverData?.name || ''}" placeholder="例: 我的服务器" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                    </div>
-                    
-                    <div style="margin-bottom: 16px;">
-                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">主机地址 *</label>
-                        <input type="text" name="host" value="${serverData?.host || ''}" placeholder="例: 192.168.1.100 或 localhost" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                    </div>
-                    
-                    <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-                        <div style="flex: 1;">
-                            <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">端口</label>
-                            <input type="number" name="port" value="${serverData?.port || 22}" placeholder="22" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                        </div>
-                        <div style="flex: 1;">
-                            <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">协议</label>
-                            <select name="protocol" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                <option value="SFTP" ${(serverData?.protocol?.toUpperCase() || 'SFTP') === 'SFTP' ? 'selected' : ''}>SFTP</option>
-                                <option value="FTP" ${(serverData?.protocol?.toUpperCase() || '') === 'FTP' ? 'selected' : ''}>FTP</option>
-                                <option value="SCP" ${(serverData?.protocol?.toUpperCase() || '') === 'SCP' ? 'selected' : ''}>SCP</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-bottom: 16px;">
-                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">用户名 *</label>
-                        <input type="text" name="username" value="${serverData?.username || ''}" placeholder="例: admin 或 root" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                    </div>
-                    
-                    <div style="margin-bottom: 16px;">
-                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">密码 *</label>
-                        <input type="password" name="password" value="${serverData?.password || ''}" placeholder="服务器登录密码" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                    </div>
-                    
-                    <div style="margin-bottom: 20px;">
-                        <label style="display: block; margin-bottom: 6px; font-size: 14px; color: #555;">默认路径</label>
-                        <input type="text" name="defaultPath" value="${serverData?.defaultPath || '/home/uploads/'}" placeholder="/home/uploads/" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                    </div>
-                    
-                    <div style="display: flex; gap: 8px; justify-content: space-between;">
-                        <div>
-                            ${isEdit ? '<button type="button" class="delete-btn" style="padding: 10px 16px; border: 1px solid #dc2626; border-radius: 4px; background: white; color: #dc2626; cursor: pointer;">删除</button>' : ''}
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button type="button" class="cancel-btn" style="padding: 10px 16px; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer;">取消</button>
-                            <button type="button" class="test-btn" style="padding: 10px 16px; border: 1px solid #3b82f6; border-radius: 4px; background: white; color: #3b82f6; cursor: pointer;">测试连接</button>
-                            <button type="submit" class="save-btn" style="padding: 10px 16px; border: none; border-radius: 4px; background: #fbbf24; color: black; cursor: pointer;">${isEdit ? '更新' : '保存'}</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        `;
-
-        document.body.appendChild(addServerDialog);
-        this.bindAddServerEvents(addServerDialog, parentDialog, isEdit);
-    }
-
-    bindAddServerEvents(addServerDialog, parentDialog, isEdit) {
-        const form = addServerDialog.querySelector('.server-form');
-        
-        // 关闭按钮
-        addServerDialog.querySelector('.close-btn').addEventListener('click', () => {
-            addServerDialog.remove();
-        });
-        
-        // 取消按钮
-        addServerDialog.querySelector('.cancel-btn').addEventListener('click', () => {
-            addServerDialog.remove();
-        });
-        
-        // 删除按钮
-        if (isEdit) {
-            addServerDialog.querySelector('.delete-btn').addEventListener('click', () => {
-                this.deleteServer(addServerDialog, parentDialog);
-            });
-        }
-        
-        // 测试连接按钮
-        addServerDialog.querySelector('.test-btn').addEventListener('click', async () => {
-            const testBtn = addServerDialog.querySelector('.test-btn');
-            const originalText = testBtn.textContent;
-            testBtn.textContent = '测试中...';
-            testBtn.disabled = true;
-            
-            try {
-                const formData = new FormData(form);
-                const serverConfig = {
-                    name: formData.get('name'),
-                    host: formData.get('host'),
-                    port: parseInt(formData.get('port')) || 22,
-                    protocol: (formData.get('protocol') || 'SFTP').toUpperCase(),
-                    username: formData.get('username'),
-                    password: formData.get('password'),
-                    defaultPath: formData.get('defaultPath') || '/home/uploads/'
-                };
-                
-                const response = await chrome.runtime.sendMessage({
-                    action: 'testConnection',
-                    data: serverConfig
-                });
-                
-                if (response.success) {
-                    let message = response.message;
-                    if (response.details) {
-                        const details = response.details;
-                        message += `\n协议: ${details.protocol}`;
-                        message += `\n主机: ${details.host}:${details.port}`;
-                        if (details.username) {
-                            message += `\n用户: ${details.username}`;
-                        }
-                        if (details.responseTime) {
-                            message += `\n响应时间: ${details.responseTime}`;
-                        }
-                        if (details.connectionTime) {
-                            message += `\n连接时间: ${details.connectionTime}`;
-                        }
-                    }
-                    this.showDetailedAlert(message, 'success', '连接测试成功');
-                } else {
-                    this.showDetailedAlert(response.error || '连接失败', 'error', '连接测试失败');
+        // 使用共享的服务器对话框模块
+        return this.serverDialog.showAddServerDialog(parentDialog, serverData, {
+            onSaveSuccess: async (result, isEdit) => {
+                // 如果有父对话框，重新加载服务器列表
+                if (parentDialog) {
+                    await this.loadServers(parentDialog);
                 }
-            } catch (error) {
-                this.showDetailedAlert(error.message || '测试过程中发生错误', 'error', '测试失败');
-            } finally {
-                testBtn.textContent = originalText;
-                testBtn.disabled = false;
+                console.log(`[CONTENT] Server ${isEdit ? 'updated' : 'created'} successfully:`, result);
+            },
+            onDeleteSuccess: async (serverId) => {
+                // 如果有父对话框，重新加载服务器列表
+                if (parentDialog) {
+                    await this.loadServers(parentDialog);
+                }
+                console.log(`[CONTENT] Server deleted successfully:`, serverId);
             }
         });
-        
-        // 保存按钮
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveServer(addServerDialog, parentDialog, isEdit);
-        });
-        
-        // ESC键关闭
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                addServerDialog.remove();
-                document.removeEventListener('keydown', handleEsc);
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
-    }
-
-    async saveServer(addServerDialog, parentDialog, isEdit) {
-        const form = addServerDialog.querySelector('.server-form');
-        const formData = new FormData(form);
-        
-        const serverData = {
-            id: formData.get('serverId') || undefined,
-            name: formData.get('name'),
-            host: formData.get('host'),
-            port: parseInt(formData.get('port')) || 22,
-            protocol: (formData.get('protocol') || 'SFTP').toUpperCase(),
-            username: formData.get('username'),
-            password: formData.get('password'),
-            defaultPath: formData.get('defaultPath') || '/home/uploads/'
-        };
-        
-        try {
-            let result;
-            if (isEdit && serverData.id) {
-                // 编辑服务器，调用 updateServer
-                result = await apiClient.updateServer(serverData.id, apiClient.convertFrontendToBackend(serverData));
-            } else {
-                // 新增服务器，调用 createServer
-                result = await apiClient.createServer(apiClient.convertFrontendToBackend(serverData));
-            }
-            addServerDialog.remove();
-            if (parentDialog) {
-                // 重新加载服务器列表
-                await this.loadServers(parentDialog);
-            }
-            this.showAlert(isEdit ? '服务器更新成功' : '服务器添加成功', 'success');
-        } catch (error) {
-            console.error('Failed to save server:', error);
-            this.showAlert('保存失败: ' + error.message, 'error');
-        }
-    }
-
-    async deleteServer(addServerDialog, parentDialog) {
-        const form = addServerDialog.querySelector('.server-form');
-        const serverId = form.querySelector('input[name="serverId"]').value;
-        const serverName = form.querySelector('input[name="name"]').value;
-        if (!confirm(`确定要删除服务器 "${serverName}" 吗？`)) {
-            return;
-        }
-        try {
-            await apiClient.deleteServer(serverId);
-            addServerDialog.remove();
-            if (parentDialog) {
-                await this.loadServers(parentDialog);
-            }
-            this.showAlert('服务器删除成功', 'success');
-        } catch (error) {
-            console.error('Failed to delete server:', error);
-            this.showAlert('删除失败: ' + error.message, 'error');
-        }
     }
 
     async injectCSS() {
@@ -1208,15 +1001,18 @@ class EasyTranslateContent {
 
     async showEditServerDialog(serverId) {
         try {
-            const serverData = await apiClient.getServer(serverId);
-            if (!serverData) {
-                this.showAlert('未找到指定的服务器', 'error');
-                return;
-            }
-            this.showAddServerDialog(null, apiClient.convertBackendToFrontend(serverData));
+            // 使用共享的服务器对话框模块
+            await this.serverDialog.showEditServerDialog(serverId, null, {
+                onSaveSuccess: async (result, isEdit) => {
+                    console.log(`[CONTENT] Server updated successfully:`, result);
+                },
+                onDeleteSuccess: async (serverId) => {
+                    console.log(`[CONTENT] Server deleted successfully:`, serverId);
+                }
+            });
         } catch (error) {
-            console.error('Failed to load server for editing:', error);
-            this.showAlert('加载服务器数据失败: ' + error.message, 'error');
+            console.error('Failed to show edit server dialog:', error);
+            this.showAlert('显示编辑服务器对话框失败: ' + error.message, 'error');
         }
     }
 
