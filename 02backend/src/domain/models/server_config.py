@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -15,3 +15,4 @@ class ServerConfig:
     default_path: str
     created_at: str
     updated_at: str
+    paths: list[dict] = field(default_factory=list)  # 新增字段

@@ -5,7 +5,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from ...domain.models import ServerConfig
 from ...infrastructure.crypto.crypto_utils import CryptoUtils
@@ -26,7 +26,7 @@ class ConfigManager:
         self.config_file = "servers.json"
 
     def create_server_config(
-        self, config_data: dict[str, Union[str, int]]
+        self, config_data: dict[str, Union[str, int, list[dict]]]
     ) -> dict[str, Union[bool, str, str]]:
         """创建服务器配置 - 阶段2核心功能
         Args:
@@ -49,7 +49,30 @@ class ConfigManager:
             # 创建新配置
             config_id = str(uuid.uuid4())
             now = datetime.now()
-
+            default_path = config_data["default_path"]
+            raw_paths: Any = config_data.get("paths", [])
+            paths: list[dict] = []
+            if isinstance(raw_paths, list):
+                paths = [
+                    p
+                    for p in raw_paths
+                    if isinstance(p, dict) and "path" in p and "update" in p
+                ]
+            # 填充 paths 逻辑
+            if not paths or len(paths) == 0:
+                paths = [
+                    {"path": default_path, "update": now.isoformat(timespec="seconds")}
+                ]
+            elif len(paths) < 5:
+                # 检查 default_path 是否已存在
+                if not any(p["path"] == default_path for p in paths):
+                    paths.append(
+                        {
+                            "path": default_path,
+                            "update": now.isoformat(timespec="seconds"),
+                        }
+                    )
+            paths = paths[:5]
             new_config = {
                 "id": config_id,
                 "name": config_data["name"],
@@ -58,9 +81,10 @@ class ConfigManager:
                 "protocol": config_data["protocol"],
                 "username": config_data["username"],
                 "password": self.crypto_utils.encrypt(str(config_data["password"])),
-                "default_path": config_data["default_path"],
+                "default_path": default_path,
                 "created_at": now.isoformat(),
                 "updated_at": now.isoformat(),
+                "paths": paths,
             }
 
             # 保存配置
@@ -94,6 +118,7 @@ class ConfigManager:
                         default_path=config["default_path"],
                         created_at=config["created_at"],
                         updated_at=config["updated_at"],
+                        paths=config.get("paths", []),
                     )
             return None
 
@@ -101,7 +126,7 @@ class ConfigManager:
             return None
 
     def update_server_config(
-        self, config_id: str, config_data: dict[str, Union[str, int]]
+        self, config_id: str, config_data: dict[str, Union[str, int, list[dict]]]
     ) -> dict[str, Union[bool, str]]:
         """更新服务器配置 - 阶段2核心功能
         Args:
@@ -145,6 +170,32 @@ class ConfigManager:
                     and config["name"] == updated_config["name"]
                 ):
                     return {"success": False, "error": "服务器名称已存在"}
+
+            # 修正 paths 逻辑
+            default_path = updated_config["default_path"]
+            raw_paths: Any = updated_config.get("paths", [])
+            paths: list[dict] = []
+            if isinstance(raw_paths, list):
+                paths = [
+                    p
+                    for p in raw_paths
+                    if isinstance(p, dict) and "path" in p and "update" in p
+                ]
+            now = datetime.now()
+            if not paths or len(paths) == 0:
+                paths = [
+                    {"path": default_path, "update": now.isoformat(timespec="seconds")}
+                ]
+            elif len(paths) < 5:
+                if not any(p["path"] == default_path for p in paths):
+                    paths.append(
+                        {
+                            "path": default_path,
+                            "update": now.isoformat(timespec="seconds"),
+                        }
+                    )
+            paths = paths[:5]
+            updated_config["paths"] = paths
 
             # 更新配置
             configs[config_index] = updated_config
@@ -208,6 +259,7 @@ class ConfigManager:
                         default_path=config["default_path"],
                         created_at=config["created_at"],
                         updated_at=config["updated_at"],
+                        paths=config.get("paths", []),
                     )
                 )
 
@@ -216,8 +268,31 @@ class ConfigManager:
         except Exception:
             return []
 
+    def update_server_paths(self, config_id: str, new_path: str) -> None:
+        configs = self.storage.load_servers()
+        for config in configs:
+            if config["id"] == config_id:
+                now = datetime.now().isoformat(timespec="seconds")
+                raw_paths: Any = config.get("paths", [])
+                paths: list[dict] = []
+                if isinstance(raw_paths, list):
+                    paths = [
+                        p
+                        for p in raw_paths
+                        if isinstance(p, dict) and "path" in p and "update" in p
+                    ]
+                paths = [p for p in paths if p["path"] != new_path]
+                paths.insert(0, {"path": new_path, "update": now})
+                default_path = config.get("default_path", "/home/uploads/")
+                # 补充 default_path 到最后
+                if len(paths) < 5 and not any(p["path"] == default_path for p in paths):
+                    paths.append({"path": default_path, "update": now})
+                config["paths"] = paths[:5]
+                self.storage.save_servers(configs)
+                break
+
     def validate_config(
-        self, config_data: dict[str, Union[str, int]]
+        self, config_data: dict[str, Union[str, int, list[dict]]]
     ) -> dict[str, Union[bool, str]]:
         """验证配置数据 - 阶段2核心功能
         Args:

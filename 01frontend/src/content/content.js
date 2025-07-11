@@ -617,32 +617,60 @@ class EasyTranslateContent {
 
     populateServerList(dialog, servers) {
         const select = dialog.querySelector('.server-select');
-        
+        const pathInput = dialog.querySelector('.target-path');
+        // 保证每个弹窗 datalist 唯一
+        const datalistId = `path-history-list-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+        let datalist = document.createElement('datalist');
+        datalist.id = datalistId;
+        pathInput.setAttribute('list', datalistId);
+        // 移除旧的 datalist
+        const oldDatalist = pathInput.parentNode.querySelector('datalist');
+        if (oldDatalist) oldDatalist.remove();
+        pathInput.parentNode.appendChild(datalist);
+
+        // 解绑旧的 change 事件（关键修复）
+        if (select._easyTranslateChangeHandler) {
+            select.removeEventListener('change', select._easyTranslateChangeHandler);
+        }
+
+        // 新的 change 事件
+        const handleChange = (e) => {
+            // 防御：如果弹窗已关闭，不再操作DOM
+            if (!document.body.contains(dialog)) return;
+            const serverId = select.value;
+            const server = servers.find(s => s.id === serverId);
+            let paths = [];
+            if (server && Array.isArray(server.paths) && server.paths.length > 0) {
+                paths = server.paths.map(p => p.path);
+            }
+            pathInput.value = (paths[0]) ? paths[0] : '/home/uploads/';
+            datalist.innerHTML = paths.map(p => `<option value="${p}">`).join('');
+        };
+        select.addEventListener('change', handleChange);
+        select._easyTranslateChangeHandler = handleChange;
+
         if (servers.length === 0) {
             select.innerHTML = '<option disabled selected>请先添加服务器</option>';
             return;
         }
-        
         select.innerHTML = '<option value="" disabled selected>选择服务器</option>';
-        
         servers.forEach((server, index) => {
             const option = document.createElement('option');
-            option.value = server.id;  // 修复：使用服务器ID作为value
+            option.value = server.id;
             option.setAttribute('data-server-index', index);
-            option.setAttribute('data-default-path', server.defaultPath || '/home/uploads/');  // 将路径存储在data属性中
-            
-            // 使用Base64编码存储服务器数据，避免HTML转义问题
-            const serverDataEncoded = btoa(encodeURIComponent(JSON.stringify({
-                protocol: server.protocol || 'sftp',
-                username: server.username || '',
-                port: server.port || 22,
-                host: server.host || ''
-            })));
-            option.setAttribute('data-server-data', serverDataEncoded);
             option.textContent = `${server.name} (${server.host})`;
-            
             select.appendChild(option);
         });
+        // 如果初始有选中服务器，自动填充 datalist
+        if (select.value) {
+            const server = servers.find(s => s.id === select.value);
+            let paths = [];
+            if (server && Array.isArray(server.paths) && server.paths.length > 0) {
+                paths = server.paths.map(p => p.path);
+            }
+            pathInput.value = (paths[0]) ? paths[0] : '/home/uploads/';
+            datalist.innerHTML = paths.map(p => `<option value="${p}">`).join('');
+        }
     }
 
     async editSelectedServer(dialog) {
@@ -846,18 +874,18 @@ class EasyTranslateContent {
         return this.serverDialog.showAddServerDialog(parentDialog, serverData, {
             onSaveSuccess: async (result, isEdit) => {
                 // 如果有父对话框，重新加载服务器列表
-                if (parentDialog) {
-                    await this.loadServers(parentDialog);
-                }
+            if (parentDialog) {
+                await this.loadServers(parentDialog);
+            }
                 console.log(`[CONTENT] Server ${isEdit ? 'updated' : 'created'} successfully:`, result);
             },
             onDeleteSuccess: async (serverId) => {
                 // 如果有父对话框，重新加载服务器列表
-                if (parentDialog) {
-                    await this.loadServers(parentDialog);
-                }
-                console.log(`[CONTENT] Server deleted successfully:`, serverId);
+            if (parentDialog) {
+                await this.loadServers(parentDialog);
             }
+                console.log(`[CONTENT] Server deleted successfully:`, serverId);
+        }
         });
     }
 

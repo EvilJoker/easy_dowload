@@ -50,7 +50,12 @@ def test_api_integration():
     assert response.status_code == 201
     data = response.get_json()
     assert data["success"] is True
-    server_id = data["server"]["id"]
+    server = data["server"]
+    server_id = server["id"]
+    # 断言 paths 字段存在且为 list，且第一个元素为 default_path
+    assert "paths" in server
+    assert isinstance(server["paths"], list)
+    assert server["paths"][0]["path"] == server["default_path"]
     print(f"✓ Created server config: {server_id}")
 
     # 获取服务器配置列表
@@ -58,6 +63,9 @@ def test_api_integration():
     assert response.status_code == 200
     servers = response.get_json()
     assert len(servers) >= 1
+    for s in servers:
+        assert "paths" in s
+        assert isinstance(s["paths"], list)
     print(f"✓ Retrieved {len(servers)} server configs")
 
     # 更新服务器配置
@@ -119,6 +127,13 @@ def test_api_integration():
         assert response.status_code == 200
         result = response.get_json()
         assert result.get("success") is True
+        # 上传后再次获取服务器，断言 paths[0]['path'] 为 target_path
+        response2 = client.get(f"/servers/{server_id}")
+        assert response2.status_code == 200
+        server2 = response2.get_json()
+        assert "paths" in server2
+        assert isinstance(server2["paths"], list)
+        assert server2["paths"][0]["path"] == upload_data["target_path"]
         print("✓ Upload API passed")
     os.unlink(tmpfile_path)
 

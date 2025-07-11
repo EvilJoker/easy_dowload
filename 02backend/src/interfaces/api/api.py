@@ -53,6 +53,9 @@ def create_app() -> Flask:
         if not server_config:
             return jsonify({"error": "服务器配置不存在"}), 404
 
+        # 更新路径历史
+        config_manager.update_server_paths(server_id, target_path)
+
         sftp_client = SFTPClient(server_config)
         file_name = os.path.basename(local_path)
         remote_path = os.path.join(target_path, file_name)
@@ -99,6 +102,7 @@ def create_app() -> Flask:
                     "protocol": config.protocol,
                     "username": config.username,
                     "default_path": config.default_path,
+                    "paths": getattr(config, "paths", []),
                     "created_at": config.created_at,
                     "updated_at": config.updated_at,
                 }
@@ -131,6 +135,7 @@ def create_app() -> Flask:
                                 "protocol": config.protocol,
                                 "username": config.username,
                                 "default_path": config.default_path,
+                                "paths": getattr(config, "paths", []),
                                 "created_at": config.created_at,
                                 "updated_at": config.updated_at,
                             },
@@ -160,6 +165,7 @@ def create_app() -> Flask:
                     "protocol": config.protocol,
                     "username": config.username,
                     "default_path": config.default_path,
+                    "paths": getattr(config, "paths", []),
                     "created_at": config.created_at,
                     "updated_at": config.updated_at,
                 }
