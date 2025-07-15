@@ -8,6 +8,158 @@ import ServerDialog from '../shared/server-dialog.js';
 const apiClient = new ApiClient();
 apiClient.setBaseUrl('http://localhost:5000');
 
+// 服务状态管理和详细信息显示逻辑
+class ServiceStatusManager {
+    constructor(apiClient) {
+        this.apiClient = apiClient;
+        this.status = 'running'; // 默认运行中
+        this.failCount = 0;
+        this.maxFailCount = 2;
+        this.pollingInterval = 5000;
+        this.timer = null;
+        this.init();
+    }
+
+    async init() {
+        // 等待DOM加载完成后再获取元素
+        this.statusIndicator = document.getElementById('serviceStatusIndicator');
+        this.statusDot = this.statusIndicator?.querySelector('.service-status-dot');
+        this.statusText = this.statusIndicator?.querySelector('.service-status-text');
+        this.detailsContainer = document.getElementById('serviceStatusDetails');
+        this.detailsBody = document.getElementById('detailsBody');
+        this.closeDetailsBtn = document.getElementById('closeDetailsBtn');
+        
+        if (!this.statusIndicator || !this.detailsContainer) {
+            console.error('ServiceStatusManager: Required elements not found');
+            return;
+        }
+        
+        console.log('ServiceStatusManager: Initializing...');
+        this.updateUI();
+        this.bindEvents();
+        this.startPolling();
+    }
+
+    bindEvents() {
+        // 点击状态指示器显示详细信息
+        this.statusIndicator.addEventListener('click', (e) => {
+            console.log('ServiceStatusManager: Status indicator clicked');
+            this.showDetails();
+        });
+        
+        // 关闭详细信息
+        if (this.closeDetailsBtn) {
+            this.closeDetailsBtn.addEventListener('click', () => {
+                this.hideDetails();
+            });
+        }
+        
+        // 点击背景关闭详细信息
+        this.detailsContainer.addEventListener('click', (e) => {
+            if (e.target === this.detailsContainer) {
+                this.hideDetails();
+            }
+        });
+    }
+
+    async checkStatus() {
+        try {
+            const response = await this.apiClient.healthCheck();
+            if (response && response.status === 'healthy') {
+                this.status = 'running';
+                this.failCount = 0;
+            } else {
+                this.failCount++;
+                if (this.failCount >= this.maxFailCount) {
+                    this.status = 'stopped';
+                }
+            }
+        } catch (error) {
+            console.error('ServiceStatusManager: Health check failed:', error);
+            this.failCount++;
+            if (this.failCount >= this.maxFailCount) {
+                this.status = 'stopped';
+            }
+        }
+        this.updateUI();
+    }
+
+    startPolling() {
+        this.checkStatus();
+        this.timer = setInterval(() => this.checkStatus(), this.pollingInterval);
+    }
+
+    updateUI() {
+        if (!this.statusDot || !this.statusText) return;
+        
+        if (this.status === 'running') {
+            this.statusDot.className = 'service-status-dot green';
+            this.statusText.textContent = '后端运行中';
+        } else {
+            this.statusDot.className = 'service-status-dot red';
+            this.statusText.textContent = '后端未运行';
+        }
+    }
+
+    showDetails() {
+        if (!this.detailsContainer || !this.detailsBody) return;
+        
+        let content = '';
+        if (this.status === 'running') {
+            content = `
+                <h4>✅ 后端运行中</h4>
+                <p>后端服务已正常运行 http://localhost:5000/demo。</p>
+                <div class="install-steps">
+                    <h5>服务信息</h5>
+                    <p><strong>状态:</strong> 运行中</p>
+                    <p><strong>检查时间:</strong> ${new Date().toLocaleString('zh-CN')}</p>
+                </div>
+            `;
+        } else {
+            content = `
+                <h4>❌ 后端未运行</h4>
+                <p>后端服务未启动，需要先安装并启动后端服务才能使用翻译功能。</p>
+                <div class="install-steps">
+                    <h5>本地安装指引</h5>
+                    <ol>
+                        <li>安装Python环境（建议Python 3.9+）</li>
+                        <li>下载后端代码到本地目录</li>
+                        <li>启动后端服务：<br><code>cd backend && bash run.sh</code></li>
+                        <li>确保服务运行在端口5000上</li>
+                    </ol>
+                    <p><strong>注意:</strong> 安装完成后，服务状态会自动更新。</p>
+                </div>
+            `;
+        }
+        
+        this.detailsBody.innerHTML = content;
+        this.detailsContainer.style.display = 'flex';
+    }
+
+    hideDetails() {
+        if (this.detailsContainer) {
+            this.detailsContainer.style.display = 'none';
+        }
+    }
+}
+
+// 页面加载后初始化服务状态管理
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing ServiceStatusManager');
+    new ServiceStatusManager(apiClient);
+
+    // 插件开关文本同步
+    const toggle = document.getElementById('domModificationToggle');
+    const statusText = document.getElementById('statusText');
+    if (toggle && statusText) {
+        const updatePluginStatus = () => {
+            statusText.textContent = toggle.checked ? '插件开启' : '插件关闭';
+        };
+        toggle.addEventListener('change', updatePluginStatus);
+        updatePluginStatus();
+    }
+});
+
 class PopupController {
     constructor() {
         this.toggle = null;
@@ -910,7 +1062,7 @@ class PopupController {
         notification.textContent = message;
         notification.style.cssText = `
             position: fixed;
-            top: 20px;
+            top: 60px;
             left: 50%;
             transform: translateX(-50%);
             background: ${colors[type]};
@@ -928,7 +1080,7 @@ class PopupController {
         document.body.appendChild(notification);
         
         // 根据类型决定显示时间
-        const duration = type === 'error' ? 5000 : 3000;
+        const duration = type === 'error' ? 3000 : 2000;
         setTimeout(() => {
             if (notification.parentNode) {
                 notification.parentNode.removeChild(notification);
@@ -1147,11 +1299,11 @@ class PopupController {
         const statusText = document.getElementById('statusText');
         if (statusText) {
             if (isEnabled) {
-                statusText.textContent = '开启';
+                statusText.textContent = '插件开启';
                 statusText.classList.remove('disabled');
                 statusText.classList.add('enabled');
             } else {
-                statusText.textContent = '关闭';
+                statusText.textContent = '插件关闭';
                 statusText.classList.remove('enabled');
                 statusText.classList.add('disabled');
             }

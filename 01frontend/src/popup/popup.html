@@ -395,20 +395,199 @@
             border-radius: 0.375rem;
             border: 1px solid #dee2e6;
         }
+
+        /* 服务状态指示器样式 */
+        .service-status-container {
+            display: flex;
+            align-items: center;
+            margin-right: 0.5rem;
+        }
+
+        .service-status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .service-status-indicator:hover {
+            background-color: #f5f5f5;
+        }
+
+        .service-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            transition: background-color 0.3s ease;
+        }
+
+        .service-status-dot.green {
+            background-color: #4CAF50;
+            box-shadow: 0 0 4px rgba(76, 175, 80, 0.3);
+        }
+
+        .service-status-dot.red {
+            background-color: #F44336;
+            box-shadow: 0 0 4px rgba(244, 67, 54, 0.3);
+        }
+
+        .service-status-text {
+            font-size: 12px;
+            font-weight: 500;
+            color: #333;
+            white-space: nowrap;
+        }
+
+
+
+        /* 服务状态详细信息样式 */
+        .service-status-details {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .details-content {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            max-width: 350px;
+            width: 90%;
+            max-height: 80%;
+            overflow: hidden;
+        }
+
+        .details-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+            background: #f8f9fa;
+        }
+
+        .details-header h6 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .close-details {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #666;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+        }
+
+        .close-details:hover {
+            background-color: #e9ecef;
+            color: #333;
+        }
+
+        .details-body {
+            padding: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .details-body h4 {
+            margin: 0 0 12px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .details-body p {
+            margin: 8px 0;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .details-body .install-steps {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #eee;
+        }
+
+        .details-body .install-steps h5 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .details-body .install-steps ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .details-body .install-steps li {
+            margin: 8px 0;
+            color: #666;
+        }
+
+        .details-body .install-steps code {
+            background-color: #f5f5f5;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #d32f2f;
+            margin: 4px 0;
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="header-left">
             <h1>Easy Translate</h1>
-
         </div>
-        <div class="status-text" id="statusText">关闭</div>
+        <div class="service-status-container">
+            <div class="service-status-indicator" id="serviceStatusIndicator">
+                <span class="service-status-dot"></span>
+                <span class="service-status-text">后端运行中</span>
+            </div>
+        </div>
         <div class="header-switch">
+            <div class="status-text" id="statusText">插件开启</div>
             <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="domModificationToggle">
             </div>
             <div class="status-indicator" id="statusIndicator"></div>
+        </div>
+    </div>
+
+    <!-- 服务状态详细信息区域 -->
+    <div class="service-status-details" id="serviceStatusDetails" style="display: none;">
+        <div class="details-content">
+            <div class="details-header">
+                <h6>后端服务状态</h6>
+                <button class="close-details" id="closeDetailsBtn">&times;</button>
+            </div>
+            <div class="details-body" id="detailsBody">
+                <!-- 动态内容 -->
+            </div>
         </div>
     </div>
 
@@ -517,6 +696,8 @@ releases/download/</textarea>
             </div>
         </div>
     </div>
+    
+
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module" src="popup.js"></script>
