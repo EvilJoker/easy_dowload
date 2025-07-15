@@ -3,6 +3,7 @@ import os
 from typing import Any, Union
 
 from flask import Flask, Response, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 from src.application.handlers.error_handler import ErrorHandler
 from src.application.services.config_manager import ConfigManager
@@ -17,6 +18,7 @@ def create_app() -> Flask:
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "static")
     )
     app = Flask(__name__, static_folder=static_dir)
+    CORS(app)
 
     # 阶段2核心模块初始化
     config_manager = ConfigManager()
