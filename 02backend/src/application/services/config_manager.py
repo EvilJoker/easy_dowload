@@ -85,6 +85,7 @@ class ConfigManager:
                 "created_at": now.isoformat(),
                 "updated_at": now.isoformat(),
                 "paths": paths,
+                "latest_use_at": now.isoformat(timespec="seconds"),
             }
 
             # 保存配置
@@ -196,6 +197,7 @@ class ConfigManager:
                     )
             paths = paths[:5]
             updated_config["paths"] = paths
+            updated_config["latest_use_at"] = now.isoformat(timespec="seconds")
 
             # 更新配置
             configs[config_index] = updated_config
@@ -260,6 +262,7 @@ class ConfigManager:
                         created_at=config["created_at"],
                         updated_at=config["updated_at"],
                         paths=config.get("paths", []),
+                        latest_use_at=config.get("latest_use_at", ""),
                     )
                 )
 
@@ -290,6 +293,15 @@ class ConfigManager:
                 config["paths"] = paths[:5]
                 self.storage.save_servers(configs)
                 break
+
+    def update_server_latest_use(self, config_id: str) -> None:
+        configs = self.storage.load_servers()
+        now = datetime.now().isoformat(timespec="seconds")
+        for config in configs:
+            if config["id"] == config_id:
+                config["latest_use_at"] = now
+                break
+        self.storage.save_servers(configs)
 
     def validate_config(
         self, config_data: dict[str, Union[str, int, list[dict]]]

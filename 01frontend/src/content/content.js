@@ -635,7 +635,6 @@ class EasyTranslateContent {
 
         // 新的 change 事件
         const handleChange = (e) => {
-            // 防御：如果弹窗已关闭，不再操作DOM
             if (!document.body.contains(dialog)) return;
             const serverId = select.value;
             const server = servers.find(s => s.id === serverId);
@@ -644,7 +643,7 @@ class EasyTranslateContent {
                 paths = server.paths.map(p => p.path);
             }
             pathInput.value = (paths[0]) ? paths[0] : '/home/uploads/';
-            datalist.innerHTML = paths.map(p => `<option value="${p}">`).join('');
+            datalist.innerHTML = paths.map(p => `<option value=\"${p}\">`).join('');
         };
         select.addEventListener('change', handleChange);
         select._easyTranslateChangeHandler = handleChange;
@@ -653,7 +652,7 @@ class EasyTranslateContent {
             select.innerHTML = '<option disabled selected>请先添加服务器</option>';
             return;
         }
-        select.innerHTML = '<option value="" disabled selected>选择服务器</option>';
+        select.innerHTML = '<option value="" disabled>选择服务器</option>';
         servers.forEach((server, index) => {
             const option = document.createElement('option');
             option.value = server.id;
@@ -661,16 +660,10 @@ class EasyTranslateContent {
             option.textContent = `${server.name} (${server.host})`;
             select.appendChild(option);
         });
-        // 如果初始有选中服务器，自动填充 datalist
-        if (select.value) {
-            const server = servers.find(s => s.id === select.value);
-            let paths = [];
-            if (server && Array.isArray(server.paths) && server.paths.length > 0) {
-                paths = server.paths.map(p => p.path);
-            }
-            pathInput.value = (paths[0]) ? paths[0] : '/home/uploads/';
-            datalist.innerHTML = paths.map(p => `<option value="${p}">`).join('');
-        }
+        // 自动选择第一个服务器（最近使用）
+        select.selectedIndex = 1; // 0是“选择服务器”占位，1是第一个服务器
+        // 触发一次change事件，自动填充路径
+        select.dispatchEvent(new Event('change'));
     }
 
     async editSelectedServer(dialog) {

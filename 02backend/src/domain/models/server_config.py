@@ -16,3 +16,4 @@ class ServerConfig:
     created_at: str
     updated_at: str
     paths: list[dict] = field(default_factory=list)  # 新增字段
+    latest_use_at: str = ""  # 新增字段，最后一次使用时间，ISO字符串

@@ -55,6 +55,8 @@ def create_app() -> Flask:
 
         # 更新路径历史
         config_manager.update_server_paths(server_id, target_path)
+        # 新增：更新服务器最后使用时间
+        config_manager.update_server_latest_use(server_id)
 
         sftp_client = SFTPClient(server_config)
         file_name = os.path.basename(local_path)
@@ -105,8 +107,13 @@ def create_app() -> Flask:
                     "paths": getattr(config, "paths", []),
                     "created_at": config.created_at,
                     "updated_at": config.updated_at,
+                    "latest_use_at": config.latest_use_at,
                 }
             )
+        # 按latest_use_at倒序排序，无值的排最后
+        def sort_key(s):
+            return s.get("latest_use_at") or ""
+        servers = sorted(servers, key=sort_key, reverse=True)
         return jsonify(servers)
 
     @app.route("/servers", methods=["POST"])
@@ -138,6 +145,7 @@ def create_app() -> Flask:
                                 "paths": getattr(config, "paths", []),
                                 "created_at": config.created_at,
                                 "updated_at": config.updated_at,
+                                "latest_use_at": config.updated_at,
                             },
                         }
                     ),
