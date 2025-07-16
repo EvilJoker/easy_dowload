@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: easy-download/backend:latest
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../02backend:/app
+      - ../01frontend:/app/01frontend
+      - /app/.venv
+    command: ["python", "-m", "src.main"]
+    environment:
+      - FLASK_ENV=production
+      - PYTHONPATH=/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped 
