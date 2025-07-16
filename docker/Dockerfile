@@ -1,5 +1,5 @@
 # 多阶段构建 Dockerfile
-FROM python:3.11-slim as builder
+FROM python:3.13-slim as builder
 
 # 安装构建依赖
 RUN apt-get update && apt-get install -y \
@@ -16,7 +16,7 @@ RUN pip install uv && \
     uv sync --frozen --no-dev
 
 # 生产镜像
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # 安装运行时依赖
 RUN apt-get update && apt-get install -y \
